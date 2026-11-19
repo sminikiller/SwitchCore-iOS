@@ -148,8 +148,13 @@ final class NativeProbe: ObservableObject {
         lines.append("App: \(short) (\(build)) · \(identifier) · pid \(getpid())")
         lines.append("Dispositivo: \(machine) · \(process.operatingSystemVersionString) · \(process.activeProcessorCount) core · RAM \(memory)")
         lines.append(signature)
-        lines.append(String(format: "[c] Memoria: disponibile %.1f MiB · footprint %.1f MiB · limite stimato %.1f MiB",
-                            available, footprint, available + footprint))
+        if available > 0 {
+            lines.append(String(format: "[c] Memoria: disponibile %.1f MiB · footprint %.1f MiB · limite stimato %.1f MiB",
+                                available, footprint, available + footprint))
+        } else {
+            // os_proc_available_memory returns 0 where it does not apply, as in the simulator.
+            lines.append(String(format: "[c] Memoria: disponibile n/d · footprint %.1f MiB", footprint))
+        }
         lines.append("[d] Firma in esecuzione: flag 0x\(String(flags, radix: 16)) (\(Self.flagNames(flags)))")
         lines.append("    CS_DEBUGGED \(debugged) · get-task-allow \(taskAllow) · debugger collegato \(attached)")
         return lines.joined(separator: "\n")
@@ -321,6 +326,10 @@ struct NativeDiagnosticsView: View {
                     Button("Ripeti sonde", systemImage: "arrow.clockwise") { probe.runProbes() }.disabled(probe.busy)
                     Button("Attiva JIT con StikDebug", systemImage: "bolt.horizontal") { probe.requestJIT() }
                         .disabled(probe.busy || probe.jitFinished)
+                    Button("Copia rapporto", systemImage: "doc.on.doc") { UIPasteboard.general.string = probe.report }
+                    ShareLink(item: probe.report, subject: Text("Rapporto M0 SwitchCore")) {
+                        Label("Condividi rapporto", systemImage: "square.and.arrow.up")
+                    }
                     Text(probe.status).font(.footnote).foregroundStyle(.secondary)
                 } footer: {
                     Text("Il test JIT apre StikDebug con lo script universal.js. L'app esegue brk solo con CS_DEBUGGED attivo e debugger collegato.")
@@ -328,10 +337,6 @@ struct NativeDiagnosticsView: View {
                 Section("Rapporto") {
                     Text(probe.report).font(.caption2.monospaced()).textSelection(.enabled)
                         .accessibilityIdentifier("native-report")
-                    Button("Copia rapporto", systemImage: "doc.on.doc") { UIPasteboard.general.string = probe.report }
-                    ShareLink(item: probe.report, subject: Text("Rapporto M0 SwitchCore")) {
-                        Label("Condividi rapporto", systemImage: "square.and.arrow.up")
-                    }
                 }
             }
             .navigationTitle("Diagnostica nativa")

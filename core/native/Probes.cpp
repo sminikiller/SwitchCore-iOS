@@ -80,6 +80,11 @@ RegisterReport probe_registers(unsigned threads, uint64_t iterations) {
     std::vector<std::thread> workers;
     for (unsigned i = 0; i < threads; ++i)
         workers.emplace_back([&, i] {
+            // Threads started from a dispatch queue (the iOS panel) inherit its blocked signals.
+            sigset_t accepted;
+            sigemptyset(&accepted);
+            sigaddset(&accepted, SIGUSR2);
+            pthread_sigmask(SIG_UNBLOCK, &accepted, nullptr);
             x18[i] = spin(iterations, 0x5A5A000000000000ull | i, &tpidr[i]);
             running.fetch_sub(1);
         });

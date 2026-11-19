@@ -14,6 +14,21 @@ final class NativeProbeTests: XCTestCase {
         #endif
     }
 
+    // The panel runs the probe on a dispatch queue, whose threads start with signals blocked.
+    func testRegisterProbeDeliversSignalsFromDispatchQueue() {
+        #if arch(arm64)
+        let done = expectation(description: "Sonda dei registri")
+        var report = SCRegisterProbe()
+        DispatchQueue.global(qos: .userInitiated).async {
+            report = sc_native_registers(2, 20_000)
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 60)
+        XCTAssertEqual(report.checks, 40_000)
+        XCTAssertGreaterThan(report.signals, 0)
+        #endif
+    }
+
     func testAddressMapCoversFourToSixtyFourGiB() {
         var map = [CChar](repeating: 0, count: 512)
         var base: UInt64 = 0
