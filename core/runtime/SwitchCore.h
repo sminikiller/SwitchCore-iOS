@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: GPL-3.0-only
+#pragma once
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+typedef struct SCSession SCSession;
+typedef enum { SC_SWITCH_1, SC_SWITCH_2_RESEARCH } SCBackend;
+typedef enum { SC_EMPTY, SC_RUNNING, SC_EXITED, SC_FAULT } SCState;
+typedef struct {
+    SCState state;
+    uint64_t instructions;
+    uint64_t guest_bytes;
+    uint64_t frames;
+    uint64_t pc;
+    uint64_t gpu_draws;
+} SCStats;
+// Calls on a session are serialized by its owner. Frame/PCM pointers live only
+// inside their synchronous callback. Audio is interleaved stereo, signed 16-bit, 48 kHz.
+// A program that exits after envSetNextLoad continues with the chosen NRO from the title's
+// virtual SD; a program started that way returns to the loaded NRO. Frame numbers keep growing.
+typedef void (*SCFrameSink)(void *, const uint32_t *, uint32_t, uint32_t);
+typedef void (*SCAudioSink)(void *, const int16_t *, size_t);
+SCSession *sc_create(void);
+void sc_destroy(SCSession *session);
+// Accepts a homebrew NRO or an extracted Switch 1 application directory.
+bool sc_load(SCSession *, SCBackend, const char *program_path, const char *title_directory);
+// Accelerated draws stay in GPU images until presentation or a GPU-side access. Guest CPU reads of
+// a render target see them only with NEXO2_VK_SYNC=1 set before the first submission.
+bool sc_set_gpu(SCSession *, bool accelerated);
+void sc_cache(SCSession *, bool enabled);
+void sc_pad(SCSession *, uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int32_t ry);
+void sc_touch(SCSession *, bool down, uint32_t x, uint32_t y);
+void sc_audio(SCSession *, SCAudioSink sink, void *context);
+SCStats sc_step(SCSession *, uint32_t budget);
+bool sc_frame(SCSession *, uint64_t after, SCFrameSink sink, void *context, uint64_t *number);
+const char *sc_message(SCSession *);
+const char *sc_title(SCSession *);
+const char *sc_log(SCSession *);
+#ifdef __cplusplus
+}
+#endif

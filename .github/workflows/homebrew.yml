@@ -1,0 +1,20 @@
+name: Homebrew
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    paths: ['tests/homebrew/**', '.github/workflows/homebrew.yml']
+permissions:
+  contents: read
+jobs:
+  rally:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64@sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/homebrew/rally/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rally-nro
+          path: tests/homebrew/rally/rally.nro
+

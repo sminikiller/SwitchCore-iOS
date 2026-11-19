@@ -1,0 +1,32 @@
+name: Release
+on:
+  push:
+    tags: ['v*.*.*']
+permissions:
+  contents: read
+jobs:
+  core:
+    uses: ./.github/workflows/core-tests.yml
+  ios:
+    uses: ./.github/workflows/ios-build.yml
+  demo:
+    uses: ./.github/workflows/homebrew.yml
+  publish:
+    needs: [core, ios, demo]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: ios-evidence, path: out}
+      - uses: actions/download-artifact@v4
+        with: {name: rally-nro, path: out/demo}
+      - name: Publish verified artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          cmp out/demo/rally.nro apps/ios/Resources/rally.nro
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes out/SwitchCore-unsigned.ipa out/demo/rally.nro
+
