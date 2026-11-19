@@ -3,6 +3,9 @@
 #include "backends/switch1/Profile.hpp"
 #include "backends/switch2-experimental/Research.hpp"
 #include "core/system.hpp"
+#ifdef NEXO2_HAS_VULKAN
+#include "video_core/vulkan/vk_rasterizer.hpp"
+#endif
 #include <cstring>
 #include <fstream>
 #include <stdexcept>
@@ -58,6 +61,12 @@ bool sc_load(SCSession *s, SCBackend backend, const char *file, const char *dire
         return false;
     }
 }
+bool sc_set_gpu(SCSession *s, bool accelerated) {
+    if (!s || !s->system) return false;
+    auto& gpu = s->system->GetKernel().GetGpu();
+    using Kind = NeXo2::GPU::RendererKind;
+    return gpu.SetRenderer(accelerated ? Kind::Vulkan : Kind::Software, &s->message);
+}
 void sc_cache(SCSession *s, bool enabled) {
     if (s && s->system) s->system->GetCpu().SetDecodeCacheEnabled(enabled);
 }
@@ -85,6 +94,9 @@ SCStats sc_step(SCSession *s, uint32_t budget) {
         s->stats.pc = sys.GetCpu().GetState().pc;
         s->stats.guest_bytes = sys.GetMemory().AllocatedBytes();
         auto& kernel = sys.GetKernel();
+#ifdef NEXO2_HAS_VULKAN
+        if (auto *hw = kernel.GetGpu().Hw()) s->stats.gpu_draws = hw->GetStats().draws;
+#endif
         if (kernel.HasExited()) {
             s->stats.state = SC_EXITED;
             s->message = "Processo terminato.";

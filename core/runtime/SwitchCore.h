@@ -15,6 +15,7 @@ typedef struct {
     uint64_t guest_bytes;
     uint64_t frames;
     uint64_t pc;
+    uint64_t gpu_draws;
 } SCStats;
 // Calls on a session are serialized by its owner. Frame/PCM pointers live only
 // inside their synchronous callback. Audio is interleaved stereo, signed 16-bit, 48 kHz.
@@ -23,6 +24,7 @@ typedef void (*SCAudioSink)(void *, const int16_t *, size_t);
 SCSession *sc_create(void);
 void sc_destroy(SCSession *session);
 bool sc_load(SCSession *, SCBackend, const char *nro_path, const char *title_directory);
+bool sc_set_gpu(SCSession *, bool accelerated);
 void sc_cache(SCSession *, bool enabled);
 void sc_pad(SCSession *, uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int32_t ry);
 void sc_touch(SCSession *, bool down, uint32_t x, uint32_t y);

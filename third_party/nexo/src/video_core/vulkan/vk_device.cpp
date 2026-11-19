@@ -77,7 +77,9 @@ bool Device::Fail(const std::string& what, VkResult r) {
 bool Device::Init(bool validation) {
     if (Ok()) return true;
     // 1. Cargar la biblioteca de Vulkan del sistema (vulkan-1.dll / libvulkan.so.1)
+#ifndef SWITCHCORE_MOLTENVK
     if (VkResult r = volkInitialize(); r != VK_SUCCESS) return Fail("no hay Vulkan en este PC (falta el driver)", r);
+#endif
 
     // 2. Instancia
     u32 api = VK_API_VERSION_1_0;
@@ -98,13 +100,21 @@ bool Device::Init(bool validation) {
     app.pEngineName = "NeXo 2";
     app.apiVersion = api;
     VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+#ifdef SWITCHCORE_MOLTENVK
+    if (HasInstanceExtension(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
+        extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+        ici.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    }
+#endif
     ici.pApplicationInfo = &app;
     ici.enabledLayerCount = u32(layers.size());
     ici.ppEnabledLayerNames = layers.data();
     ici.enabledExtensionCount = u32(extensions.size());
     ici.ppEnabledExtensionNames = extensions.data();
     if (VkResult r = vkCreateInstance(&ici, nullptr, &m_instance); r != VK_SUCCESS) return Fail("vkCreateInstance", r);
+#ifndef SWITCHCORE_MOLTENVK
     volkLoadInstance(m_instance);
+#endif
 
     if (debug_utils) {
         VkDebugUtilsMessengerCreateInfoEXT mci{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
@@ -184,6 +194,10 @@ bool Device::Init(bool validation) {
 
     // Dibujar sin VkRenderPass ("dynamic rendering"): Vulkan 1.3 o VK_KHR_dynamic_rendering
     std::vector<const char*> dev_ext;
+#ifdef SWITCHCORE_MOLTENVK
+    if (HasDeviceExtension(m_physical, "VK_KHR_portability_subset"))
+        dev_ext.push_back("VK_KHR_portability_subset");
+#endif
     VkPhysicalDeviceVulkan13Features f13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
     VkPhysicalDeviceDynamicRenderingFeaturesKHR fdr{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR};
     VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
@@ -223,7 +237,9 @@ bool Device::Init(bool validation) {
         m_device = VK_NULL_HANDLE;
         return Fail("vkCreateDevice", cr);
     }
+#ifndef SWITCHCORE_MOLTENVK
     volkLoadDevice(m_device);
+#endif
     vkGetDeviceQueue(m_device, m_queueFamily, 0, &m_queue);
     if (m_dynamicRendering) {
         CmdBeginRendering = core13 ? vkCmdBeginRendering : vkCmdBeginRenderingKHR;

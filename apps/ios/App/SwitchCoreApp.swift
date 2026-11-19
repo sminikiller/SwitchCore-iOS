@@ -93,6 +93,7 @@ struct ProfileView: View {
     @AppStorage private var fps: Int
     @AppStorage private var scale: Double
     @AppStorage private var audio: Bool
+    @AppStorage private var accelerated: Bool
     @AppStorage private var cache: Bool
     @AppStorage private var swap: Bool
     @AppStorage private var haptics: Bool
@@ -101,6 +102,7 @@ struct ProfileView: View {
         _fps = AppStorage(wrappedValue: 60, title.id + ".fps")
         _scale = AppStorage(wrappedValue: 1, title.id + ".scale")
         _audio = AppStorage(wrappedValue: true, title.id + ".audio")
+        _accelerated = AppStorage(wrappedValue: true, title.id + ".metal")
         _cache = AppStorage(wrappedValue: true, title.id + ".cache")
         _swap = AppStorage(wrappedValue: false, title.id + ".swap")
         _haptics = AppStorage(wrappedValue: true, title.id + ".haptics")
@@ -111,6 +113,7 @@ struct ProfileView: View {
                 Section("Grafica e prestazioni") {
                     Picker("Limite FPS", selection: $fps) { ForEach([15,30,60], id: \.self) { Text("\($0)").tag($0) } }
                     Picker("Scala di presentazione", selection: $scale) { Text("50%").tag(0.5); Text("100%").tag(1.0) }
+                    Toggle("Accelera shader con Metal", isOn: $accelerated)
                     Toggle("Cache istruzioni", isOn: $cache)
                 }
                 Section("Audio e controller") {
@@ -120,7 +123,7 @@ struct ProfileView: View {
                 }
                 Section("Diagnostica") {
                     LabeledContent("CPU", value: "Interprete ARM64")
-                    LabeledContent("GPU", value: "Maxwell software + Metal")
+                    LabeledContent("GPU", value: accelerated ? "MoltenVK con fallback software" : "Maxwell software")
                     let log = Library.dir(title.id).appendingPathComponent("last-session.txt")
                     if let text = try? String(contentsOf: log, encoding: .utf8) {
                         Text(text).font(.caption.monospaced()).textSelection(.enabled)

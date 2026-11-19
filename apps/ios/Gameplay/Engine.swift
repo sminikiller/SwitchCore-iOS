@@ -5,6 +5,7 @@ import GameController
 struct Profile {
     var fps = 60
     var audio = true
+    var accelerated = true
     var cache = true
     var swapAB = false
     var scale = 1.0
@@ -14,6 +15,7 @@ struct Profile {
         func flag(_ key: String, _ fallback: Bool) -> Bool { d.object(forKey: id + key) as? Bool ?? fallback }
         fps = d.object(forKey: id + ".fps") as? Int ?? 60
         audio = flag(".audio", true)
+        accelerated = flag(".metal", true)
         cache = flag(".cache", true)
         swapAB = flag(".swap", false)
         haptics = flag(".haptics", true)
@@ -71,6 +73,7 @@ private final class Worker {
     var lastPresent = 0.0
     var lastUI = 0.0
     var fps = 0.0
+    var renderer = "Maxwell software"
     var profile: Profile
     var paused = false
     var consumer: ((GuestFrame?, String, String, Bool) -> Void)?
@@ -82,6 +85,7 @@ private final class Worker {
         guard sc_load(session, SC_SWITCH_1, title.file.path, Library.dir(title.id).path) else {
             consumer?(nil, "", String(cString: sc_message(session)), true); return
         }
+        if profile.accelerated && sc_set_gpu(session, true) { renderer = "MoltenVK / Metal" }
         sc_cache(session, profile.cache)
         if profile.audio {
             audio = AudioOutput()
@@ -153,7 +157,7 @@ private final class Worker {
         if pendingFrame != nil || finished || start - lastUI >= 0.5 {
             let frame = pendingFrame.map { GuestFrame(data: $0.data, width: $0.width, height: $0.height, serial: number) }
             pendingFrame = nil
-            let text = String(format: "%.1f FPS guest  ·  %.1f ms/frame  ·  %.1f MiB guest", fps, fps > 0 ? 1000/fps : 0, Double(stats.guest_bytes)/1048576)
+            let text = String(format: "%.1f FPS guest  ·  %.1f ms/frame  ·  %.1f MiB guest", fps, fps > 0 ? 1000/fps : 0, Double(stats.guest_bytes)/1048576) + "\n" + renderer + " · draw GPU " + String(stats.gpu_draws)
             let log = finished ? String(cString: sc_message(session)) + "\n" + String(cString: sc_log(session)) : String(cString: sc_log(session))
             consumer?(frame, text, log, finished)
             lastUI = start

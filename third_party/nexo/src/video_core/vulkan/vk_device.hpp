@@ -9,7 +9,11 @@
 #include <string>
 #include <vector>
 #include "common/types.hpp"
+#ifdef SWITCHCORE_MOLTENVK
+#include <vulkan/vulkan.h>
+#else
 #include "volk.h"
+#endif
 
 namespace NeXo2::GPU::Vulkan {
 

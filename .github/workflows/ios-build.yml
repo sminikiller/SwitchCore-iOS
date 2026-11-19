@@ -14,6 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - run: bash tools/prepare-metal.sh
       - run: xcodegen generate
       - name: Build arm64 device app
         run: |
