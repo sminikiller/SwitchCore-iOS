@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches-ignore: [main]
-    paths: ['third_party/**', 'core/**', 'backends/**', 'tools/**', 'tests/**', 'CMakeLists.txt', 'apps/ios/Resources/**', '.github/workflows/core-tests.yml']
+    paths: ['third_party/**', 'core/**', 'backends/**', 'tools/**', 'tests/**', 'CMakeLists.txt', 'cmake/**', 'apps/ios/Resources/**', '.github/workflows/core-tests.yml']
 permissions:
   contents: read
 concurrency:
@@ -37,6 +37,46 @@ jobs:
       - name: Native execution probes
         if: runner.os == 'macOS'
         run: build/native-probes | tee build/native-probes.txt
+      - name: Recompiler and interpreter on the same guest code
+        if: runner.os == 'macOS'
+        shell: bash
+        run: build/jit-bench | tee build/jit-bench.txt
+      - name: Independent homebrew menu launches Rally on the recompiler
+        if: runner.os == 'macOS'
+        shell: bash
+        run: SWITCHCORE_JIT=1 python tools/verify-independent.py build/switchcore-probe build/independent-jit
+      - name: Rally soak on both CPU paths
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          for cpu in interpreter jit; do
+            flag=; if [[ $cpu == jit ]]; then flag=--jit; fi
+            build/switchcore-probe $flag apps/ios/Resources/rally.nro build/soak-$cpu soak > build/soak-$cpu.txt ||
+              { head -n 40 build/soak-$cpu.txt; exit 1; }
+            head -n 1 build/soak-$cpu.txt
+          done
+      - name: Need for Madness race on both CPU paths
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        shell: bash
+        run: |
+          python tools/verify-independent.py --fetch-only build/fixtures
+          for cpu in jit interpreter; do
+            flag=; if [[ $cpu == jit ]]; then flag=--jit; fi
+            build/switchcore-replay $flag build/fixtures/nfm_switch.nro build/nfm-$cpu tests/integration/nfm-race.txt \
+              build/nfm-$cpu-frames 600 > build/nfm-$cpu.txt 2>&1 || { tail -n 40 build/nfm-$cpu.txt; exit 1; }
+            tail -n 3 build/nfm-$cpu.txt
+          done
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'macOS'
+        with:
+          name: recompiler-${{ matrix.os }}
+          path: |
+            build/jit-bench.txt
+            build/soak-*.txt
+            build/nfm-*.txt
+            build/rally-jit.ppm
+            build/independent-jit/hbmenu.ppm
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -31,6 +31,16 @@ bool sc_load(SCSession *, SCBackend, const char *program_path, const char *title
 // a render target see them only with NEXO2_VK_SYNC=1 set before the first submission.
 bool sc_set_gpu(SCSession *, bool accelerated);
 void sc_cache(SCSession *, bool enabled);
+typedef struct {
+    bool active;                // the guest CPU runs on the recompiler
+    uint64_t code_base;         // executable address of its code cache slot, 0 outside the pool
+    uint64_t interpreted_words; // words left to the interpreter when translating
+    uint64_t fallbacks;         // instructions the interpreter executed for the recompiler
+} SCJitStats;
+// ARM64 recompiler (Dynarmic) instead of the interpreter for the guest CPU. The choice survives
+// sc_load. Returns whether the recompiler is selected: false in builds without it.
+bool sc_set_jit(SCSession *, bool enabled);
+SCJitStats sc_jit_stats(SCSession *);
 void sc_pad(SCSession *, uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int32_t ry);
 void sc_touch(SCSession *, bool down, uint32_t x, uint32_t y);
 void sc_audio(SCSession *, SCAudioSink sink, void *context);

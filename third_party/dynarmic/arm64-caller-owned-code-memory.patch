@@ -1,0 +1,170 @@
+SwitchCore patch for azahar-emu/dynarmic a46601580d5512d324104f985b5f0209dc980ddc.
+
+Lets the ARM64 backend use caller-owned code memory with separate executable and
+writable views. iOS 26 on TXM devices only executes regions prepared through the
+debugger at startup, so the recompiler must take its code cache from a fixed pool
+and write it through an alias instead of allocating MAP_JIT memory per instance.
+Without the new UserConfig fields the backend behaves as before.
+
+diff -ruN a/src/dynarmic/backend/arm64/a64_address_space.cpp b/src/dynarmic/backend/arm64/a64_address_space.cpp
+--- a/src/dynarmic/backend/arm64/a64_address_space.cpp
++++ b/src/dynarmic/backend/arm64/a64_address_space.cpp
+@@ -322,7 +322,7 @@
+ }
+ 
+ A64AddressSpace::A64AddressSpace(const A64::UserConfig& conf)
+-        : AddressSpace(conf.code_cache_size)
++        : AddressSpace(conf.code_cache_size, conf.code_cache_execute, conf.code_cache_write)
+         , conf(conf) {
+     EmitPrelude();
+ }
+diff -ruN a/src/dynarmic/backend/arm64/address_space.cpp b/src/dynarmic/backend/arm64/address_space.cpp
+--- a/src/dynarmic/backend/arm64/address_space.cpp
++++ b/src/dynarmic/backend/arm64/address_space.cpp
+@@ -20,17 +20,20 @@
+ 
+ namespace Dynarmic::Backend::Arm64 {
+ 
+-AddressSpace::AddressSpace(size_t code_cache_size)
++AddressSpace::AddressSpace(size_t code_cache_size, void* code_execute, void* code_write)
+         : code_cache_size(code_cache_size)
+-        , mem(code_cache_size)
+-        , code(mem.ptr(), mem.ptr())
++        , mem(code_cache_size, code_execute, code_write)
++        , code(mem.wptr(), mem.xptr())
+         , fastmem_manager(exception_handler) {
+     ASSERT_MSG(code_cache_size <= 128 * 1024 * 1024, "code_cache_size > 128 MiB not currently supported");
+ 
+-    exception_handler.Register(mem, code_cache_size);
+-    exception_handler.SetFastmemCallback([this](u64 host_pc) {
+-        return FastmemCallback(host_pc);
+-    });
++    // Fastmem needs the exception handler, which only knows memory allocated here.
++    if (oaknut::CodeBlock* block = mem.owned()) {
++        exception_handler.Register(*block, code_cache_size);
++        exception_handler.SetFastmemCallback([this](u64 host_pc) {
++            return FastmemCallback(host_pc);
++        });
++    }
+ }
+ 
+ AddressSpace::~AddressSpace() = default;
+@@ -98,7 +101,7 @@
+ }
+ 
+ void AddressSpace::DumpDisassembly() const {
+-    for (u32* ptr = mem.ptr(); ptr < code.xptr<u32*>(); ptr++) {
++    for (u32* ptr = mem.xptr(); ptr < code.xptr<u32*>(); ptr++) {
+         std::printf("%s", Common::DisassembleAArch64(*ptr, mcl::bit_cast<u64>(ptr)).c_str());
+     }
+ }
+@@ -136,7 +139,7 @@
+     using namespace oaknut::util;
+ 
+     for (auto [ptr_offset, target] : block_info.relocations) {
+-        CodeGenerator c{mem.ptr(), mem.ptr()};
++        CodeGenerator c{mem.wptr(), mem.xptr()};
+         c.set_xptr(reinterpret_cast<u32*>(block_info.entry_point + ptr_offset));
+ 
+         switch (target) {
+@@ -276,7 +279,7 @@
+     using namespace oaknut::util;
+ 
+     for (auto [ptr_offset, type] : block_relocations_list) {
+-        CodeGenerator c{mem.ptr(), mem.ptr()};
++        CodeGenerator c{mem.wptr(), mem.xptr()};
+         c.set_xptr(reinterpret_cast<u32*>(entry_point + ptr_offset));
+ 
+         switch (type) {
+diff -ruN a/src/dynarmic/backend/arm64/address_space.h b/src/dynarmic/backend/arm64/address_space.h
+--- a/src/dynarmic/backend/arm64/address_space.h
++++ b/src/dynarmic/backend/arm64/address_space.h
+@@ -22,9 +22,61 @@
+ 
+ namespace Dynarmic::Backend::Arm64 {
+ 
++// Code memory with separate writable and executable views. Without caller-owned memory
++// both views are one oaknut::CodeBlock (MAP_JIT on macOS).
++class CodeMemory {
++public:
++    CodeMemory(size_t code_size, void* execute, void* write)
++            : size(code_size) {
++        if (execute && write) {
++            xmem = static_cast<u32*>(execute);
++            wmem = static_cast<u32*>(write);
++        } else {
++            block.emplace(code_size);
++            xmem = wmem = block->ptr();
++        }
++    }
++
++    u32* xptr() const { return xmem; }
++    u32* wptr() const { return wmem; }
++    oaknut::CodeBlock* owned() { return block ? &*block : nullptr; }
++
++    void protect() {
++        if (block) {
++            block->protect();
++        }
++    }
++
++    void unprotect() {
++        if (block) {
++            block->unprotect();
++        }
++    }
++
++    void invalidate(u32* mem, size_t length) {
++        if (block) {
++            block->invalidate(mem, length);
++            return;
++        }
++#if defined(__APPLE__)
++        sys_icache_invalidate(mem, length);
++#else
++        __builtin___clear_cache(reinterpret_cast<char*>(mem), reinterpret_cast<char*>(mem) + length);
++#endif
++    }
++
++    void invalidate_all() { invalidate(xmem, size); }
++
++private:
++    std::optional<oaknut::CodeBlock> block;
++    u32* xmem = nullptr;
++    u32* wmem = nullptr;
++    size_t size;
++};
++
+ class AddressSpace {
+ public:
+-    explicit AddressSpace(size_t code_cache_size);
++    explicit AddressSpace(size_t code_cache_size, void* code_execute = nullptr, void* code_write = nullptr);
+     virtual ~AddressSpace();
+ 
+     virtual IR::Block GenerateIR(IR::LocationDescriptor) const = 0;
+@@ -70,7 +122,7 @@
+     FakeCall FastmemCallback(u64 host_pc);
+ 
+     const size_t code_cache_size;
+-    oaknut::CodeBlock mem;
++    CodeMemory mem;
+     oaknut::CodeGenerator code;
+ 
+     // A IR::LocationDescriptor will have one current CodePtr.
+diff -ruN a/src/dynarmic/interface/A64/config.h b/src/dynarmic/interface/A64/config.h
+--- a/src/dynarmic/interface/A64/config.h
++++ b/src/dynarmic/interface/A64/config.h
+@@ -289,6 +289,13 @@
+     // Maximum size is limited by the maximum length of a x86_64 / arm64 jump.
+     size_t code_cache_size = 128 * 1024 * 1024;  // bytes
+ 
++    /// Optional caller-owned code memory of code_cache_size bytes (arm64 backend only).
++    /// code_cache_execute is the executable view and code_cache_write a writable alias of
++    /// the same pages. When both are set the JIT neither allocates nor reprotects code
++    /// memory, and fastmem is unavailable.
++    void* code_cache_execute = nullptr;
++    void* code_cache_write = nullptr;
++
+     /// Internal use only
+     bool very_verbose_debugging_output = false;
+ };

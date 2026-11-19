@@ -11,28 +11,132 @@
 //     - SVC (el kernel HLE: se le pasa el estado exactamente como con el interprete),
 //     - instrucciones que dynarmic no sabe hacer: las hace nuestro interprete,
 //     - BRK y demas excepciones, y contar el tiempo (ticks = instrucciones).
+//
+// SwitchCore: the ARM64 backend of dynarmic has no interpreter fallback and stops on a few IR
+// operations. MemoryReadCode checks every word first and hides the ones the backend cannot emit;
+// dynarmic then raises NoExecuteFault and ExceptionRaised runs that word with the interpreter.
 #include "jit_dynarmic.hpp"
 #include "interpreter.hpp"
 #include "fp_ops.hpp"
 #include "common/logger.hpp"
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 
 #ifdef NEXO2_HAS_JIT
 #include <array>
-#include <atomic>
+#include <exception>
+#include <iterator>
 #include <optional>
+#include <stdexcept>
+#include <utility>
 #include <dynarmic/interface/A64/a64.h>
 #include <dynarmic/interface/A64/config.h>
 #include <dynarmic/interface/exclusive_monitor.h>
 #include <dynarmic/interface/optimization_flags.h>
+// SwitchCore: dynarmic internals used to check words before translation (JitImpl::CanEmit)
+#include <dynarmic/frontend/A64/a64_location_descriptor.h>
+#include <dynarmic/frontend/A64/translate/a64_translate.h>
+#include <dynarmic/ir/basic_block.h>
+#include <dynarmic/ir/opcodes.h>
+#if defined(__aarch64__) || defined(_M_ARM64)
+#include <dynarmic/backend/arm64/abi.h>
+#endif
 #endif
 
 namespace NeXo2::Core {
 
 using NeXo2::Common::Logger;
 
+namespace {
+std::atomic<JitCodeMemory*> g_codeMemory{nullptr};   // SwitchCore: JitBackend::SetCodeMemory
+}
+
 #ifdef NEXO2_HAS_JIT
+
+#if defined(__aarch64__) || defined(_M_ARM64)
+constexpr bool kArm64Host = true;
+// SwitchCore: Darwin changes the host x18 on every context switch. The backend must neither allocate
+// nor save it; the guest x18 lives in the JIT state like every other guest register.
+namespace ArmAbi = Dynarmic::Backend::Arm64;
+static_assert([] {
+    for (int reg : ArmAbi::GPR_ORDER)
+        if (reg == 18) return false;
+    return true;
+}());
+static_assert(((ArmAbi::ABI_CALLER_SAVE | ArmAbi::ABI_CALLEE_SAVE) & (u64(1) << 18)) == 0);
+static_assert(ArmAbi::Xstate.index() != 18 && ArmAbi::Xhalt.index() != 18 && ArmAbi::Xticks.index() != 18 &&
+              ArmAbi::Xfastmem.index() != 18 && ArmAbi::Xpagetable.index() != 18 &&
+              ArmAbi::Xscratch0.index() != 18 && ArmAbi::Xscratch1.index() != 18 &&
+              ArmAbi::Xscratch2.index() != 18);
+#else
+constexpr bool kArm64Host = false;
+#endif
+
+// SwitchCore: IR operations whose ARM64 emitter is an ASSERT_FALSE("Unimplemented") stub at the
+// pinned dynarmic commit (backend/arm64/emit_arm64_*.cpp). Recheck when updating dynarmic.
+bool Arm64CannotEmit(Dynarmic::IR::Opcode op) {
+    using O = Dynarmic::IR::Opcode;
+    switch (op) {
+    case O::SM4AccessSubstitutionBox:
+    case O::FPAbs16:
+    case O::FPMulAdd16:
+    case O::FPMulSub16:
+    case O::FPNeg16:
+    case O::FPRecipEstimate16:
+    case O::FPRecipExponent16:
+    case O::FPRecipStepFused16:
+    case O::FPRoundInt16:
+    case O::FPRSqrtEstimate16:
+    case O::FPRSqrtStepFused16:
+    case O::FPHalfToFixedS16:
+    case O::FPHalfToFixedS32:
+    case O::FPHalfToFixedS64:
+    case O::FPHalfToFixedU16:
+    case O::FPHalfToFixedU32:
+    case O::FPHalfToFixedU64:
+    case O::SignedSaturatedAdd8:
+    case O::SignedSaturatedAdd16:
+    case O::SignedSaturatedAdd32:
+    case O::SignedSaturatedAdd64:
+    case O::SignedSaturatedDoublingMultiplyReturnHigh16:
+    case O::SignedSaturatedDoublingMultiplyReturnHigh32:
+    case O::SignedSaturatedSub8:
+    case O::SignedSaturatedSub16:
+    case O::SignedSaturatedSub32:
+    case O::SignedSaturatedSub64:
+    case O::UnsignedSaturatedAdd8:
+    case O::UnsignedSaturatedAdd16:
+    case O::UnsignedSaturatedAdd32:
+    case O::UnsignedSaturatedAdd64:
+    case O::UnsignedSaturatedSub8:
+    case O::UnsignedSaturatedSub16:
+    case O::UnsignedSaturatedSub32:
+    case O::UnsignedSaturatedSub64:
+    case O::VectorEqual128:
+    case O::VectorMaxS64:
+    case O::VectorMaxU64:
+    case O::VectorMinS64:
+    case O::VectorMinU64:
+    case O::VectorSignExtend64:
+    case O::VectorSignedMultiply16:
+    case O::VectorSignedMultiply32:
+    case O::VectorUnsignedMultiply16:
+    case O::VectorUnsignedMultiply32:
+    case O::FPVectorEqual16:
+    case O::FPVectorMulAdd16:
+    case O::FPVectorNeg16:
+    case O::FPVectorRecipEstimate16:
+    case O::FPVectorRecipStepFused16:
+    case O::FPVectorRSqrtEstimate16:
+    case O::FPVectorRSqrtStepFused16:
+    case O::FPVectorToSignedFixed16:
+    case O::FPVectorToUnsignedFixed16:
+        return true;
+    default:
+        return false;
+    }
+}
 
 // Monitor exclusivo comun a todos los nucleos (LDXR en uno, STXR en otro...).
 // Dynarmic lo usa para que solo un nucleo a la vez haga su "escritura exclusiva".
@@ -69,12 +173,37 @@ public:
         conf.define_unpredictable_behaviour = true;
         conf.enable_cycle_counting = true;
         conf.code_cache_size = 128 * 1024 * 1024;
+        // SwitchCore: on ARM64 hosts the code cache can come from a provider, such as a fixed pool
+        // with a writable alias. It replaces dynarmic's own allocation for this instance.
+        if constexpr (kArm64Host) {
+            if (JitCodeMemory* provider = g_codeMemory.load(std::memory_order_acquire)) {
+                const JitCodeRegion region = provider->Acquire();
+                if (region.size) {
+                    m_provider = provider;
+                    m_region = region;
+                    conf.code_cache_execute = region.execute;
+                    conf.code_cache_write = region.write;
+                    conf.code_cache_size = region.size;
+                    stats.code_base = reinterpret_cast<u64>(region.execute);
+                }
+            }
+        }
         // Sin el paso que junta instrucciones desconocidas seguidas en un solo "hazlo tu"
         // (InterpreterFallback de N): se pasaria del limite de instrucciones y de Step().
         conf.optimizations = Dynarmic::all_safe_optimizations & ~Dynarmic::OptimizationFlag::MiscIROpt;
-        m_jit = std::make_unique<Dynarmic::A64::Jit>(conf);
+        try {
+            m_jit = std::make_unique<Dynarmic::A64::Jit>(conf);
+        } catch (...) {
+            if (m_provider) m_provider->Release(m_region);
+            throw;
+        }
         m_generation = m_mem.Generation();
         m_seenCodeWrites = m_mem.CodeWriteCount();
+    }
+
+    ~JitImpl() override {
+        m_jit.reset();   // SwitchCore: the translated code lives in m_region until here
+        if (m_provider) m_provider->Release(m_region);
     }
 
     // ------------------------------------------------------------------
@@ -105,6 +234,9 @@ public:
         }
         // Los flags de la FPU del PC son del emulador, no del programa (el JIT lleva los suyos)
         FP::ClearHostFlags();
+        // SwitchCore: C++ exceptions cannot unwind through translated code. One raised by the
+        // interpreter or the kernel inside a callback was kept, and leaves now with the state saved.
+        if (m_pending) std::rethrow_exception(std::exchange(m_pending, nullptr));
         return m_cpu.m_instructionCount - start;
     }
 
@@ -152,7 +284,8 @@ public:
 
     // Tras algo que pudo parar la CPU o pedir cambio de hilo: que el JIT salga
     void HaltIfNeeded() {
-        if (m_cpu.m_halted || m_cpu.m_stopRequested) m_jit->HaltExecution(Dynarmic::HaltReason::UserDefined1);
+        if (m_cpu.m_halted || m_cpu.m_stopRequested || m_pending)
+            m_jit->HaltExecution(Dynarmic::HaltReason::UserDefined1);
     }
 
     // Ejecuta 'count' instrucciones con nuestro interprete, desde el PC actual del JIT
@@ -161,7 +294,12 @@ public:
         m_cpu.m_state.pc = pc;
         FP::ClearHostFlags();
         const u64 ticks = m_cpu.m_instructionCount;
-        const u64 done = m_cpu.RunPlain(count);
+        u64 done = 0;
+        try {
+            done = m_cpu.RunPlain(count);
+        } catch (...) {
+            m_pending = std::current_exception();    // SwitchCore: Run() throws it (MMU fault...)
+        }
         m_cpu.m_instructionCount = ticks;            // ya las cuenta dynarmic (son parte del bloque)
         m_stepFallback = s64(done);
         FP::FoldHostFlags(m_cpu.m_state.fpsr);       // flags de la coma flotante del interprete
@@ -183,6 +321,28 @@ public:
         stats.invalidations += count;
     }
 
+    // SwitchCore: translates one word on its own and reports whether the ARM64 backend can emit
+    // it: no IR::Term::Interpret and no operation from Arm64CannotEmit. One IR block serves many
+    // words, because creating a block allocates a pool for 4096 instructions.
+    bool CanEmit(VAddr pc, u32 word) {
+        namespace IR = Dynarmic::IR;
+        if (!m_probe || ++m_probeWords > 256) {
+            m_probe.emplace(Dynarmic::A64::LocationDescriptor{pc, Dynarmic::FP::FPCR{}, false});
+            m_probeWords = 0;
+        }
+        IR::Block& block = *m_probe;
+        auto& list = block.Instructions();
+        const auto last = list.empty() ? list.end() : std::prev(list.end());
+        const Dynarmic::A64::LocationDescriptor where{pc, Dynarmic::FP::FPCR{m_jit->GetFpcr()}, false};
+        Dynarmic::A64::TranslateSingleInstruction(block, where, word);
+        const IR::Terminal terminal = block.GetTerminal();
+        bool ok = boost::get<IR::Term::Interpret>(&terminal) == nullptr;
+        if (block.HasTerminal()) block.ReplaceTerminal(IR::Term::Invalid{});
+        for (auto it = last == list.end() ? list.begin() : std::next(last); it != list.end(); ++it)
+            if (Arm64CannotEmit(it->GetOpcode())) ok = false;
+        return ok;
+    }
+
     // ------------------------------------------------------------------
     // UserCallbacks: memoria
     // ------------------------------------------------------------------
@@ -191,8 +351,20 @@ public:
         // que no conoce, recorreria GB de ceros.) Ejecutar ahi -> NoExecuteFault -> el
         // interprete para la CPU con el mensaje de siempre.
         if (!m_mem.PagePointer(vaddr)) return std::nullopt;
+        // SwitchCore: the same path enforces the guest execute permission, and takes the words
+        // the backend cannot emit: the interpreter runs them or stops with its usual message.
+        try {
+            m_mem.RequireGuestAccess(vaddr, 4, 4);
+        } catch (const std::runtime_error&) {
+            return std::nullopt;
+        }
         m_mem.MarkCode(vaddr);   // si luego se escribe aqui, nos enteramos (CheckCodeWrites)
-        return m_mem.Read<u32>(vaddr);
+        const u32 word = m_mem.Read<u32>(vaddr);
+        if (!CanEmit(vaddr, word)) {
+            ++stats.interpreted_words;
+            return std::nullopt;
+        }
+        return word;
     }
     u8  MemoryRead8(VAddr a) override  { return m_mem.Read<u8>(a); }
     u16 MemoryRead16(VAddr a) override { return m_mem.Read<u16>(a); }
@@ -238,9 +410,13 @@ public:
         // dynarmic ya avanzo el PC; el kernel ve lo mismo que con el interprete (el PC del SVC)
         const u64 next_pc = m_cpu.m_state.pc;
         m_cpu.m_state.pc = next_pc - 4;
-        if (m_cpu.m_svcHandler) m_cpu.m_svcHandler(swi, m_cpu.m_state);
+        try {
+            if (m_cpu.m_svcHandler) m_cpu.m_svcHandler(swi, m_cpu.m_state);
+        } catch (...) {
+            m_pending = std::current_exception();   // SwitchCore: Run() throws it, PC on the SVC
+        }
         m_cpu.m_state.x[31] = 0;
-        m_cpu.m_state.pc = next_pc;
+        if (!m_pending) m_cpu.m_state.pc = next_pc;
         LoadIntoJit();
         CheckCodeWrites();
         HaltIfNeeded();
@@ -297,10 +473,17 @@ private:
     u64 m_seenCodeWrites = 0;
     std::atomic<bool> m_running{false};   // RequestHalt puede llegar desde otro hilo del PC
     s64 m_stepFallback = -1;   // instrucciones que hizo el interprete en un Step() (-1 = ninguna)
+    // SwitchCore
+    JitCodeMemory* m_provider = nullptr;   // owner of m_region, if the code cache came from it
+    JitCodeRegion m_region;
+    std::exception_ptr m_pending;          // exception from a callback, thrown by Run()
+    std::optional<Dynarmic::IR::Block> m_probe;   // scratch IR for CanEmit
+    unsigned m_probeWords = 0;
 };
 
 JitBackend::JitBackend(Interpreter& cpu, Memory& memory) : m_impl(std::make_unique<JitImpl>(cpu, memory)) {
-    Logger::Log(Logger::Level::Info, "[JIT] dynarmic listo (ARM64 -> x86-64)");
+    Logger::Log(Logger::Level::Info, kArm64Host ? "[JIT] dynarmic pronto (ARM64 -> ARM64)"
+                                                : "[JIT] dynarmic listo (ARM64 -> x86-64)");
 }
 JitBackend::~JitBackend() = default;
 u64  JitBackend::Run(u64 max_steps) { return m_impl->Run(max_steps); }
@@ -323,5 +506,7 @@ const JitBackend::Stats& JitBackend::GetStats() const { static Stats s; return s
 bool JitBackend::Available() { return false; }
 
 #endif
+
+void JitBackend::SetCodeMemory(JitCodeMemory* provider) { g_codeMemory.store(provider, std::memory_order_release); }
 
 } // namespace NeXo2::Core

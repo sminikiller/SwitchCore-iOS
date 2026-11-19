@@ -7,6 +7,9 @@
 #ifdef NEXO2_HAS_VULKAN
 #include "video_core/vulkan/vk_rasterizer.hpp"
 #endif
+#ifdef NEXO2_HAS_JIT
+#include "CodePool.hpp"
+#endif
 #include <algorithm>
 #include <filesystem>
 #include <stdexcept>
@@ -24,6 +27,7 @@ struct SCSession {
     fs::path menu;           // NRO opened by sc_load; programs it launches return to it
     bool launched = false;   // the running program was chosen through envSetNextLoad
     uint64_t frame_base = 0; // frames presented by earlier programs of this session
+    bool jit = false;        // recompiler chosen with sc_set_jit, kept by sc_load
     void fail(const std::string &reason) {
         stats.state = SC_FAULT;
         message = reason;
@@ -71,6 +75,17 @@ bool resume(SCSession &s) {
     s.launched = !next.empty();
     return true;
 }
+
+// The recompiler takes its code cache from the fixed pool that iOS needs (docs/nativo.md). Where the
+// pool cannot be reserved, Dynarmic keeps allocating its own memory.
+void apply_jit(SCSession &s) {
+#ifdef NEXO2_HAS_JIT
+    std::string error;
+    if (s.jit && switchcore::code_pool().reserve(error))
+        NeXo2::Core::JitBackend::SetCodeMemory(&switchcore::code_pool());
+#endif
+    s.system->GetCpu().SetJitEnabled(s.jit);
+}
 } // namespace
 
 SCSession *sc_create() { return new (std::nothrow) SCSession; }
@@ -79,7 +94,9 @@ void sc_destroy(SCSession *s) { delete s; }
 bool sc_load(SCSession *s, SCBackend backend, const char *file, const char *directory) {
     if (!s)
         return false;
+    const bool jit = s->jit;
     *s = SCSession{};
+    s->jit = jit;
     try {
         if (backend != SC_SWITCH_1)
             throw std::runtime_error(switchcore::switch2::status);
@@ -98,6 +115,7 @@ bool sc_load(SCSession *s, SCBackend backend, const char *file, const char *dire
             s->menu = path;
             start(*s, path, "");
         }
+        apply_jit(*s);
         s->system->GetMemory().EnableGuestProtection();
         s->stats.state = SC_RUNNING;
         return true;
@@ -117,6 +135,27 @@ bool sc_set_gpu(SCSession *s, bool accelerated) {
 void sc_cache(SCSession *s, bool enabled) {
     if (s && s->system)
         s->system->GetCpu().SetDecodeCacheEnabled(enabled);
+}
+bool sc_set_jit(SCSession *s, bool enabled) {
+    if (!s)
+        return false;
+    s->jit = enabled && NeXo2::Core::Interpreter::JitAvailable();
+    if (s->system)
+        apply_jit(*s);
+    return s->jit;
+}
+SCJitStats sc_jit_stats(SCSession *s) {
+    SCJitStats stats{};
+    if (!s || !s->system || !s->system->GetCpu().IsJitEnabled())
+        return stats;
+    stats.active = true;
+    if (const auto *jit = s->system->GetCpu().GetJit()) {
+        const auto &counters = jit->GetStats();
+        stats.code_base = counters.code_base;
+        stats.interpreted_words = counters.interpreted_words;
+        stats.fallbacks = counters.fallbacks;
+    }
+    return stats;
 }
 void sc_pad(SCSession *s, uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int32_t ry) {
     if (s && s->stats.state == SC_RUNNING)

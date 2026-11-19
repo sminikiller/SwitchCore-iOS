@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "core/runtime/SwitchCore.h"
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -25,15 +26,28 @@ void receive(void *context, const uint32_t *rgba, uint32_t width, uint32_t heigh
     image.output.clear();
 }
 int main(int argc, char **argv) {
+    // A leading --jit runs the guest CPU on the ARM64 recompiler instead of the interpreter.
+    // SWITCHCORE_JIT=1 does the same for callers with a fixed command line (verify-independent.py).
+    const bool flag = argc > 1 && std::string(argv[1]) == "--jit";
+    if (flag) {
+        --argc;
+        ++argv;
+    }
+    const char *variable = std::getenv("SWITCHCORE_JIT");
+    const bool jit = flag || (variable && std::string(variable) == "1");
     if (argc < 3 || argc > 5) {
-        std::cerr << "switchcore-probe NRO_OR_EXTRACTED_FOLDER TITLE_DIR [rally|soak|frame|exit|launcher] "
-                     "[capture.ppm]\n";
+        std::cerr << "switchcore-probe [--jit] NRO_OR_EXTRACTED_FOLDER TITLE_DIR "
+                     "[rally|soak|frame|exit|launcher] [capture.ppm]\n";
         return 2;
     }
     const std::string mode = argc > 3 ? argv[3] : "frame";
     if (mode != "frame" && mode != "rally" && mode != "soak" && mode != "exit" && mode != "launcher")
         return 2;
     std::unique_ptr<SCSession, decltype(&sc_destroy)> s(sc_create(), sc_destroy);
+    if (jit && !sc_set_jit(s.get(), true)) {
+        std::cerr << "Ricompilatore non disponibile in questa build.\n";
+        return 1;
+    }
     if (!sc_load(s.get(), SC_SWITCH_1, argv[1], argv[2])) {
         std::cerr << sc_message(s.get()) << '\n';
         return 1;
@@ -89,11 +103,16 @@ int main(int argc, char **argv) {
         }
     } while (stats.state == SC_RUNNING && std::chrono::steady_clock::now() - start < limit);
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    const SCJitStats recompiler = sc_jit_stats(s.get());
     std::cout << "title=" << sc_title(s.get()) << " instructions=" << stats.instructions
               << " guest_bytes=" << stats.guest_bytes << " frames=" << last << " size=" << image.width << "x"
               << image.height << " elapsed_s=" << seconds << " input=" << pressed << " release=" << released
-              << " audible_frames=" << audibleFrames << " phase=" << phase << " pc=" << std::hex << stats.pc
-              << std::dec << " status=" << sc_message(s.get()) << '\n'
+              << " audible_frames=" << audibleFrames << " phase=" << phase
+              << " cpu=" << (recompiler.active ? "jit" : "interpreter")
+              << " mips=" << stats.instructions / seconds / 1e6 << " fallbacks=" << recompiler.fallbacks
+              << " interpreted_words=" << recompiler.interpreted_words << std::hex
+              << " code_base=" << recompiler.code_base << " pc=" << stats.pc << std::dec
+              << " status=" << sc_message(s.get()) << '\n'
               << sc_log(s.get()) << '\n';
     std::error_code ec;
     auto save = std::filesystem::path(argv[2]) / "sdmc" / "rally-record.bin";

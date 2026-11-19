@@ -11,9 +11,15 @@
 // Each line holds a guest frame count, a decimal HID button mask and signed left-stick X.
 // Captures the actual guest image at each checkpoint. No polling of host input or host display.
 int main(int argc, char **argv) {
+    // A leading --jit runs the guest CPU on the ARM64 recompiler instead of the interpreter.
+    const bool jit = argc > 1 && std::string(argv[1]) == "--jit";
+    if (jit) {
+        --argc;
+        ++argv;
+    }
     if (argc != 5 && argc != 6) {
-        std::cerr
-            << "switchcore-replay PROGRAM TITLE_DIR PLAN.txt CAPTURE_DIR [CHECKPOINT_TIMEOUT_SECONDS]\n";
+        std::cerr << "switchcore-replay [--jit] PROGRAM TITLE_DIR PLAN.txt CAPTURE_DIR "
+                     "[CHECKPOINT_TIMEOUT_SECONDS]\n";
         return 2;
     }
     int timeout = 120;
@@ -26,6 +32,11 @@ int main(int argc, char **argv) {
     if (!plan)
         return 2;
     std::unique_ptr<SCSession, decltype(&sc_destroy)> session(sc_create(), sc_destroy);
+    if (jit && !sc_set_jit(session.get(), true)) {
+        std::cerr << "Ricompilatore non disponibile in questa build.\n";
+        return 1;
+    }
+    const auto begin = std::chrono::steady_clock::now();
     if (!sc_load(session.get(), SC_SWITCH_1, argv[1], argv[2])) {
         std::cerr << sc_message(session.get()) << '\n';
         return 1;
@@ -84,5 +95,12 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
+    // Whole plan, loading included: guest frames and instructions per host second.
+    const auto total = std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
+    const SCJitStats recompiler = sc_jit_stats(session.get());
+    std::cout << "summary cpu=" << (recompiler.active ? "jit" : "interpreter") << " frames=" << stats.frames
+              << " elapsed_s=" << total << " fps=" << stats.frames / total
+              << " mips=" << stats.instructions / total / 1e6 << " fallbacks=" << recompiler.fallbacks
+              << " interpreted_words=" << recompiler.interpreted_words << std::endl;
     return checkpoint && !plan.bad() ? 0 : 2;
 }
