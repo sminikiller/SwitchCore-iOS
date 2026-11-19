@@ -52,8 +52,8 @@ jobs:
           for cpu in interpreter jit; do
             flag=; if [[ $cpu == jit ]]; then flag=--jit; fi
             build/switchcore-probe $flag apps/ios/Resources/rally.nro build/soak-$cpu soak > build/soak-$cpu.txt ||
-              { head -n 40 build/soak-$cpu.txt; exit 1; }
-            head -n 1 build/soak-$cpu.txt
+              { tail -n 40 build/soak-$cpu.txt; exit 1; }
+            grep '^title=' build/soak-$cpu.txt
           done
       - name: Need for Madness race on both CPU paths
         if: runner.os == 'macOS'
