@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pipx run --spec clang-format==18.1.8 clang-format --dry-run --Werror core/runtime/* backends/*/*.hpp tools/probe.cpp tests/integration/runtime_tests.cpp
+      - run: pipx run --spec clang-format==18.1.8 clang-format --dry-run --Werror core/runtime/* core/native/* backends/*/*.hpp tools/probe.cpp tools/native-probes.cpp tests/integration/runtime_tests.cpp
       - run: clang++ --analyze -Xanalyzer -analyzer-output=text -std=c++20 -I. -Ithird_party/nexo/src -Ithird_party/nexo/src/core -Ithird_party/nexo/src/core/memory -Ithird_party/nexo/src/core/arm64 core/runtime/SwitchCore.cpp
   desktop:
     strategy:
@@ -34,6 +34,9 @@ jobs:
           probe=build/switchcore-probe
           if [[ "$RUNNER_OS" == Windows ]]; then probe=build/Release/switchcore-probe.exe; fi
           python tools/verify-independent.py "$probe" build/independent
+      - name: Native execution probes
+        if: runner.os == 'macOS'
+        run: build/native-probes | tee build/native-probes.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -43,4 +46,5 @@ jobs:
             build/Testing/Temporary/LastTest.log
             build/rally.ppm
             build/independent/hbmenu.ppm
+            build/native-probes.txt
 
