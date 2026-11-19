@@ -23,7 +23,7 @@ final class NativeProbe: ObservableObject {
         // A code-signing kill cannot be caught: the journal of the previous launch shows the last step.
         if let previous = try? String(contentsOf: Self.journal, encoding: .utf8), !previous.isEmpty {
             jit = "[e] JIT StikDebug: passi registrati nell'ultimo test (avvio precedente)\n" +
-                previous.split(separator: "\n").map { "    " + $0 }.joined(separator: "\n")
+                previous.split(separator: "\n").map { "    \($0)" }.joined(separator: "\n")
         }
         refresh()
     }
@@ -132,28 +132,30 @@ final class NativeProbe: ObservableObject {
             String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
         }
         let info = Bundle.main.infoDictionary ?? [:]
-        let version = (info["CFBundleShortVersionString"] as? String ?? "?") + " (" +
-            (info["CFBundleVersion"] as? String ?? "?") + ")"
+        let short = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        let identifier = Bundle.main.bundleIdentifier ?? "?"
         let process = ProcessInfo.processInfo
+        let memory = String(format: "%.2f GiB", Double(process.physicalMemory) / 1_073_741_824)
         let available = Double(sc_available_memory()) / 1_048_576
         let footprint = Double(sc_process_footprint()) / 1_048_576
         let flags = sc_native_cs_flags()
-        return [
-            "SwitchCore M0 · diagnostica nativa",
-            "Data: " + ISO8601DateFormatter().string(from: Date()),
-            "App: " + version + " · " + (Bundle.main.bundleIdentifier ?? "?") + " · pid " + String(getpid()),
-            "Dispositivo: " + machine + " · " + process.operatingSystemVersionString + " · " +
-                String(process.activeProcessorCount) + " core · RAM " +
-                String(format: "%.2f GiB", Double(process.physicalMemory) / 1_073_741_824),
-            signature,
-            String(format: "[c] Memoria: disponibile %.1f MiB · footprint %.1f MiB · limite stimato %.1f MiB",
-                   available, footprint, available + footprint),
-            "[d] Firma in esecuzione: flag 0x" + String(flags, radix: 16) + " (" + Self.flagNames(flags) + ")",
-            "    CS_DEBUGGED " + (flags & Self.debugged != 0 ? "sì" : "no") + " · get-task-allow " +
-                (flags & 0x4 != 0 ? "sì" : "no") + " · debugger collegato " +
-                (sc_native_debugger_attached() ? "sì" : "no"),
-        ].joined(separator: "\n")
+        let debugged = Self.yes(flags & Self.debugged != 0)
+        let taskAllow = Self.yes(flags & 0x4 != 0)
+        let attached = Self.yes(sc_native_debugger_attached())
+        var lines: [String] = ["SwitchCore M0 · diagnostica nativa"]
+        lines.append("Data: \(ISO8601DateFormatter().string(from: Date()))")
+        lines.append("App: \(short) (\(build)) · \(identifier) · pid \(getpid())")
+        lines.append("Dispositivo: \(machine) · \(process.operatingSystemVersionString) · \(process.activeProcessorCount) core · RAM \(memory)")
+        lines.append(signature)
+        lines.append(String(format: "[c] Memoria: disponibile %.1f MiB · footprint %.1f MiB · limite stimato %.1f MiB",
+                            available, footprint, available + footprint))
+        lines.append("[d] Firma in esecuzione: flag 0x\(String(flags, radix: 16)) (\(Self.flagNames(flags)))")
+        lines.append("    CS_DEBUGGED \(debugged) · get-task-allow \(taskAllow) · debugger collegato \(attached)")
+        return lines.joined(separator: "\n")
     }
+
+    private static func yes(_ value: Bool) -> String { value ? "sì" : "no" }
 
     private static func flagNames(_ flags: UInt32) -> String {
         let names: [(UInt32, String)] = [
@@ -168,14 +170,15 @@ final class NativeProbe: ObservableObject {
 
     private static func describeSignature() -> String {
         let signed = CodeSignature.read(Bundle.main.executableURL)
-        var lines = ["Firma dell'eseguibile: " + (signed.present ? "presente" : "assente") + " · entitlement " +
-            summary(signed.entitlements) + " · DER " + (signed.der ? "sì" : "no")]
+        let present = signed.present ? "presente" : "assente"
+        var lines = ["Firma dell'eseguibile: \(present) · entitlement \(summary(signed.entitlements)) · DER \(yes(signed.der))"]
         if let profile = CodeSignature.profile() {
             let name = profile["Name"] as? String ?? "?"
             let expiry = (profile["ExpirationDate"] as? Date).map { ISO8601DateFormatter().string(from: $0) } ?? "?"
             let devices = (profile["ProvisionedDevices"] as? [Any])?.count ?? 0
-            lines.append("Profilo: \"" + name + "\" · scade " + expiry + " · dispositivi " + String(devices))
-            lines.append("    entitlement del profilo: " + summary(profile["Entitlements"] as? [String: Any] ?? [:]))
+            let granted = summary(profile["Entitlements"] as? [String: Any] ?? [:])
+            lines.append("Profilo: \"\(name)\" · scade \(expiry) · dispositivi \(devices)")
+            lines.append("    entitlement del profilo: \(granted)")
         } else {
             lines.append("Profilo: embedded.mobileprovision assente")
         }
@@ -187,12 +190,13 @@ final class NativeProbe: ObservableObject {
                     "com.apple.developer.kernel.increased-memory-limit"]
         let known = keys.map { key -> String in
             let name = key.components(separatedBy: ".").last ?? key
-            guard let value = entitlements[key] else { return name + " assente" }
-            if let flag = value as? Bool { return name + (flag ? " sì" : " no") }
-            return name + " " + String(describing: value)
+            guard let value = entitlements[key] else { return "\(name) assente" }
+            if let flag = value as? Bool { return "\(name) \(yes(flag))" }
+            return "\(name) \(value)"
         }
         let others = entitlements.keys.filter { !keys.contains($0) }.count
-        return known.joined(separator: ", ") + (others > 0 ? ", altri " + String(others) : "")
+        let rest = others > 0 ? ", altri \(others)" : ""
+        return known.joined(separator: ", ") + rest
     }
 
     private static func describe(_ registers: SCRegisterProbe, seconds: Double, map: String, base: UInt64,
@@ -203,8 +207,7 @@ final class NativeProbe: ObservableObject {
         } else {
             lines.append(String(format: "[a] Registri: %u thread · %llu controlli · %llu segnali · %.2f s",
                                 registers.threads, registers.checks, registers.signals, seconds))
-            lines.append("    x18 cambiato " + String(registers.x18_changed) + " volte · TPIDR_EL0 cambiato " +
-                         String(registers.tpidr_changed) + " volte")
+            lines.append("    x18 cambiato \(registers.x18_changed) volte · TPIDR_EL0 cambiato \(registers.tpidr_changed) volte")
         }
         lines.append("[b] Indirizzi fissi 4-64 GiB, blocchi da 256 MiB (+ riservabile, . no):")
         let cells = Array(map)
@@ -213,30 +216,35 @@ final class NativeProbe: ObservableObject {
         }
         let total = Double(cells.filter { $0 == "+" }.count) / 4
         lines.append(String(format: "    massimo contiguo %llu MiB da 0x%llx · totale %.2f GiB", size >> 20, base, total))
-        lines.append("    oltre 64 GiB: " + high)
+        lines.append("    oltre 64 GiB: \(high)")
         return lines.joined(separator: "\n")
     }
 
     private static func describe(_ jit: SCJitProbe, error: String) -> String {
         func value(_ result: Int32) -> String { result < 0 ? "non eseguita" : String(result) }
-        func kern(_ code: Int32) -> String { code == 0 ? "ok" : "errore " + String(code) }
+        func kern(_ code: Int32) -> String { code == 0 ? "ok" : "errore \(code)" }
         var lines = ["[e] JIT StikDebug (universal.js):"]
         guard jit.attempted else {
-            lines.append("    " + error)
+            lines.append("    \(error)")
             return lines.joined(separator: "\n")
         }
-        lines.append("    regione " + (jit.script_allocated ? "del debugger" : String(format: "0x%llx", jit.region)) +
-                     String(format: " (%llu KiB) · eseguibile 0x%llx · alias RW 0x%llx", jit.size >> 10,
-                            jit.executable, jit.alias))
-        lines.append("    vm_protect RX " + kern(jit.protect_error) + " · alias vm_remap " + kern(jit.remap_error) +
-                     " · protezioni alias " + String(jit.alias_protection) + "/" + String(jit.alias_max_protection))
-        lines.append("    42 prima del distacco: " + value(jit.before_detach) + " · distacco " +
-                     (jit.detached ? "sì" : "no") + " · dopo il distacco: " + value(jit.after_detach) +
-                     " · riscritta (43): " + value(jit.rewritten))
-        if jit.fault != 0 { lines.append("    segnale durante la chiamata: " + String(jit.fault)) }
-        if !error.isEmpty { lines.append("    errore: " + error) }
-        lines.append("    esito: " + (jit.rewritten == 43 ? "JIT funzionante anche dopo il distacco" :
-            jit.before_detach == 42 ? "JIT funzionante solo prima del distacco" : "JIT non funzionante"))
+        let region = jit.script_allocated ? "del debugger" : String(format: "0x%llx", jit.region)
+        let mapping = String(format: "(%llu KiB) · eseguibile 0x%llx · alias RW 0x%llx", jit.size >> 10,
+                             jit.executable, jit.alias)
+        lines.append("    regione \(region) \(mapping)")
+        lines.append("    vm_protect RX \(kern(jit.protect_error)) · alias vm_remap \(kern(jit.remap_error)) · protezioni alias \(jit.alias_protection)/\(jit.alias_max_protection)")
+        lines.append("    42 prima del distacco: \(value(jit.before_detach)) · distacco \(yes(jit.detached)) · dopo il distacco: \(value(jit.after_detach)) · riscritta (43): \(value(jit.rewritten))")
+        if jit.fault != 0 { lines.append("    segnale durante la chiamata: \(jit.fault)") }
+        if !error.isEmpty { lines.append("    errore: \(error)") }
+        let outcome: String
+        if jit.rewritten == 43 {
+            outcome = "JIT funzionante anche dopo il distacco"
+        } else if jit.before_detach == 42 {
+            outcome = "JIT funzionante solo prima del distacco"
+        } else {
+            outcome = "JIT non funzionante"
+        }
+        lines.append("    esito: \(outcome)")
         return lines.joined(separator: "\n")
     }
 }
