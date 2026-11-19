@@ -51,7 +51,7 @@ constexpr vm_size_t page = 16384;
 
 namespace switchcore::native {
 RegisterReport probe_registers(unsigned threads, uint64_t iterations) {
-    struct sigaction action{}, previous{};
+    struct sigaction action = {}, previous = {};
     action.sa_handler = count_signal;
     sigemptyset(&action.sa_mask);
     sigaction(SIGUSR2, &action, &previous);
