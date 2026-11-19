@@ -79,7 +79,7 @@ struct LibraryView: View {
                                 }
                             }
                         }
-                        ForEach(["GPLv3", "libnx", "MoltenVK"], id: \.self) { name in
+                        ForEach(["GPLv3", "libnx", "MoltenVK", "Atkinson-OFL"], id: \.self) { name in
                             if let url = Bundle.main.url(forResource: name, withExtension: "txt") {
                                 NavigationLink(name) {
                                     ScrollView { Text((try? String(contentsOf: url, encoding: .utf8)) ?? "").padding() }

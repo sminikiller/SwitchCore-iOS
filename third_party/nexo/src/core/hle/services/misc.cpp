@@ -9,6 +9,9 @@
 #include <iterator>
 #include <random>
 #include <vector>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 namespace NeXo2::HLE {
 
@@ -73,6 +76,14 @@ const std::vector<u8>& HostFont() {
     static const std::vector<u8> font = [] {
         std::vector<std::filesystem::path> candidates;
         if (const char* env = std::getenv("NEXO2_FONT")) candidates.emplace_back(env);
+#ifdef __APPLE__
+        uint32_t length = 0;
+        _NSGetExecutablePath(nullptr, &length);
+        std::vector<char> executable(length);
+        if (length && _NSGetExecutablePath(executable.data(), &length) == 0)
+            candidates.emplace_back(std::filesystem::path(executable.data()).parent_path() /
+                                    "AtkinsonHyperlegible-Regular.ttf");
+#endif
         if (const char* windir = std::getenv("WINDIR")) {
             candidates.emplace_back(std::filesystem::path(windir) / "Fonts" / "segoeui.ttf");
             candidates.emplace_back(std::filesystem::path(windir) / "Fonts" / "arial.ttf");

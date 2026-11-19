@@ -34,6 +34,10 @@ endif()
 target_sources(switchcore PRIVATE core/runtime/SwitchCore.cpp)
 if(BUILD_TESTING)
   add_executable(switchcore-probe tools/probe.cpp)
+  add_custom_command(TARGET switchcore-probe POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/apps/ios/Resources/AtkinsonHyperlegible-Regular.ttf"
+      "$<TARGET_FILE_DIR:switchcore-probe>/AtkinsonHyperlegible-Regular.ttf")
   target_link_libraries(switchcore-probe PRIVATE switchcore)
   add_executable(runtime-tests tests/integration/runtime_tests.cpp)
   target_link_libraries(runtime-tests PRIVATE switchcore)
