@@ -23,19 +23,25 @@ final class SDFolderTests: XCTestCase {
         let session = try XCTUnwrap(sc_create())
         defer { sc_destroy(session) }
         XCTAssertTrue(sc_load(session, SC_SWITCH_1, menu.path, title.path), String(cString: sc_message(session)))
-        let menuTitle = String(cString: sc_title(session))
+        // hbmenu presents 1280 x 720 frames, Rally a 320 x 180 field. Only symbols the app itself calls
+        // survive dead stripping in the host executable, so the switch is read from the frames.
+        let rallyFrame: UInt32 = 320 << 16 | 180
+        var size: UInt32 = 0
+        var serial: UInt64 = 0
         var stats = sc_step(session, 100_000)
         let deadline = ProcessInfo.processInfo.systemUptime + 300
         // After the first menu frames, press A every 8 frames: hbmenu starts the selected entry on key down.
-        while stats.state == SC_RUNNING && String(cString: sc_title(session)) == menuTitle &&
-            ProcessInfo.processInfo.systemUptime < deadline {
+        while stats.state == SC_RUNNING && size != rallyFrame && ProcessInfo.processInfo.systemUptime < deadline {
             let pressA = stats.frames >= 5 && (stats.frames / 8) % 2 == 0
             sc_pad(session, pressA ? 1 : 0, 0, 0, 0, 0)
             stats = sc_step(session, 100_000)
+            withUnsafeMutablePointer(to: &size) { pointer in
+                _ = sc_frame(session, serial, { context, _, width, height in
+                    context?.assumingMemoryBound(to: UInt32.self).pointee = width << 16 | height
+                }, pointer, &serial)
+            }
         }
-        let started = String(cString: sc_title(session))
         let log = String(String(cString: sc_log(session)).suffix(2000))
-        XCTAssertNotEqual(started, menuTitle, String(cString: sc_message(session)) + "\n" + log)
-        XCTAssertTrue(started.localizedCaseInsensitiveContains("rally"), started)
+        XCTAssertEqual(size, rallyFrame, String(cString: sc_message(session)) + "\n" + log)
     }
 }
