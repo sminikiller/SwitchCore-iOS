@@ -34,6 +34,27 @@ final class MetalTests: XCTestCase {
             XCTAssertGreaterThan(colors.count, 16)
         }, nil, &number))
     }
+    func testIndependentRacingGameFirstFrame() throws {
+        let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "nfm_switch", withExtension: "nro"))
+        let session = try XCTUnwrap(sc_create())
+        defer { sc_destroy(session) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertTrue(sc_load(session, SC_SWITCH_1, file.path, root.path), String(cString: sc_message(session)))
+        XCTAssertEqual(String(cString: sc_title(session)), "Need for Madness")
+        XCTAssertTrue(sc_set_gpu(session, false))
+        var stats = sc_step(session, 250000)
+        let deadline = Date().addingTimeInterval(70)
+        while stats.frames == 0 && stats.state == SC_RUNNING && Date() < deadline { stats = sc_step(session, 250000) }
+        var serial: UInt64 = 0
+        XCTAssertTrue(sc_frame(session, 0, { _, pixels, w, h in
+            XCTAssertEqual(w, 1280)
+            XCTAssertEqual(h, 720)
+            guard let pixels else { return XCTFail("Framebuffer assente") }
+            let colors = Set(stride(from: 0, to: Int(w) * Int(h), by: 17).map { pixels[$0] })
+            XCTAssertGreaterThan(colors.count, 12)
+        }, nil, &serial), String(cString: sc_message(session)))
+    }
     // Vertices shaded on the CPU, Maxwell fragment shader translated to Metal through MoltenVK.
     func testGuestMaxwellTriangle() throws {
         try runTriangle(gpuVertexShader: false)

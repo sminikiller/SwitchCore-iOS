@@ -101,4 +101,46 @@ struct ExtractedGame {
         complete = true
         return Self(id: id, name: source.lastPathComponent, staging: staged)
     }
+
+    // A homebrew may keep its own assets at the SD root (for example stk-data/).
+    // Install a new directory atomically alongside existing saves.
+    static func installSDDirectory(_ source: URL, in title: URL) throws {
+        let fm = FileManager.default
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+        let sd = title.appendingPathComponent("sdmc")
+        let dest = sd.appendingPathComponent(source.lastPathComponent)
+        let staging = title.appendingPathComponent(".sd-import-" + UUID().uuidString)
+        defer { try? fm.removeItem(at: staging) }
+        try fm.createDirectory(at: sd, withIntermediateDirectories: true)
+        guard !fm.fileExists(atPath: dest.path) else { throw CocoaError(.fileWriteFileExists) }
+        var coordinatorError: NSError?
+        var result: Result<Void, Error>?
+        NSFileCoordinator().coordinate(readingItemAt: source, options: .withoutChanges, error: &coordinatorError) { input in
+            result = Result {
+                let from = input.resolvingSymlinksInPath().standardizedFileURL.path
+                guard !staging.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(from + "/") else {
+                    throw ImportError.invalidFile(input.lastPathComponent)
+                }
+                func copyTree(_ dir: URL, to target: URL) throws {
+                    let values = try dir.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                    guard values.isDirectory == true, values.isSymbolicLink != true else { throw ImportError.invalidFile(dir.lastPathComponent) }
+                    try fm.createDirectory(at: target, withIntermediateDirectories: false)
+                    for file in try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey]) {
+                        let type = try file.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey])
+                        let out = target.appendingPathComponent(file.lastPathComponent)
+                        guard type.isSymbolicLink != true else { throw ImportError.invalidFile(file.lastPathComponent) }
+                        if type.isDirectory == true { try copyTree(file, to: out) }
+                        else if type.isRegularFile == true { try fm.copyItem(at: file, to: out) }
+                        else { throw ImportError.invalidFile(file.lastPathComponent) }
+                    }
+                }
+                try copyTree(input, to: staging)
+                try fm.moveItem(at: staging, to: dest)
+            }
+        }
+        if let coordinatorError { throw coordinatorError }
+        guard let result else { throw ImportError.invalidFile(source.lastPathComponent) }
+        try result.get()
+    }
 }

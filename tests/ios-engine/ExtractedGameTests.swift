@@ -30,6 +30,12 @@ final class ExtractedGameTests: XCTestCase {
         defer { sc_destroy(session) }
         XCTAssertTrue(sc_load(session, SC_SWITCH_1, app.path, staged.staging.path), String(cString: sc_message(session)))
         XCTAssertEqual(sc_step(session, 1024).state, SC_EXITED)
+        let assets = temp.appendingPathComponent("stk-data")
+        try fm.createDirectory(at: assets, withIntermediateDirectories: true)
+        try Data([7, 8]).write(to: assets.appendingPathComponent("sample"))
+        try ExtractedGame.installSDDirectory(assets, in: staged.staging)
+        XCTAssertEqual(try Data(contentsOf: staged.staging.appendingPathComponent("sdmc/stk-data/sample")), Data([7, 8]))
+        XCTAssertThrowsError(try ExtractedGame.installSDDirectory(assets, in: staged.staging))
         try Data([1, 2, 4]).write(to: rom)
         XCTAssertNotEqual(staged.id, try ExtractedGame.prepare(source, in: library).id)
         try Data([0]).write(to: main)

@@ -14,6 +14,7 @@ struct LibraryView: View {
     @State private var importing = false
     @State private var folder = false
     @State private var copying = false
+    @State private var sdTitle: Title?
     @State private var credits = false
     @State private var query = ""
     @State private var filter = 0
@@ -50,6 +51,9 @@ struct LibraryView: View {
                             }.contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityIdentifier("play-" + title.name)
                         Menu {
+                            Button("Aggiungi cartella alla SD", systemImage: "folder.badge.plus") {
+                                sdTitle = title; folder = true; importing = true
+                            }.disabled(copying)
                             Button(title.favorite ? "Rimuovi dai preferiti" : "Aggiungi ai preferiti",
                                    systemImage: "star") { library.mark(title.id, favorite: true) }
                             Button("Profilo e diagnostica", systemImage: "slider.horizontal.3") { configuring = title }
@@ -70,8 +74,8 @@ struct LibraryView: View {
                     if copying { ProgressView().accessibilityLabel("Importazione in corso") }
                     else {
                         Menu {
-                            Button("Homebrew NRO") { folder = false; importing = true }
-                            Button("Cartella di gioco estratta") { folder = true; importing = true }
+                            Button("Homebrew NRO") { sdTitle = nil; folder = false; importing = true }
+                            Button("Cartella di gioco estratta") { sdTitle = nil; folder = true; importing = true }
                         } label: { Label("Importa", systemImage: "plus") }
                     }
                 }
@@ -105,7 +109,12 @@ struct LibraryView: View {
                     defer { copying = false }
                     do {
                         let url = try result.get()
-                        if folder { copying = true; try await library.importFolder(url) }
+                        if let title = sdTitle {
+                            copying = true
+                            try await Task.detached(priority: .userInitiated) {
+                                try ExtractedGame.installSDDirectory(url, in: Library.dir(title.id))
+                            }.value
+                        } else if folder { copying = true; try await library.importFolder(url) }
                         else { try library.importFile(url) }
                     } catch { library.error = error.localizedDescription }
                 }

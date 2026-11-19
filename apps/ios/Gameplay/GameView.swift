@@ -54,7 +54,7 @@ struct GameView: View {
                                 engine.touch(true, UInt32(x), UInt32(y))
                             }.onEnded { _ in engine.touch(false, 0, 0) })
                         }}
-                } else if !engine.done { ProgressView("Avvio homebrew") }
+                } else if !engine.done { ProgressView("Avvio del titolo") }
                 if engine.done || engine.paused {
                     Text(engine.done ? String(engine.log.prefix(240)) : "In pausa").padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }
@@ -65,8 +65,8 @@ struct GameView: View {
                 }.frame(maxHeight: 80)
             }
             ViewThatFits {
-                HStack { controls([("←",12),("↑",13),("↓",15),("→",14)]); Spacer(); controls([("−",11),("+",10),("X",2),("Y",3),("B",1),("A",0)]) }
-                VStack { controls([("←",12),("↑",13),("↓",15),("→",14),("−",11),("+",10)]); controls([("X",2),("Y",3),("B",1),("A",0)]) }
+                HStack { controls([("←",12),("↑",13),("↓",15),("→",14),("ZL",8),("ZR",9)]); Spacer(); controls([("−",11),("+",10),("X",2),("Y",3),("B",1),("A",0)]) }
+                VStack { controls([("←",12),("↑",13),("↓",15),("→",14),("−",11),("+",10)]); controls([("ZL",8),("ZR",9),("X",2),("Y",3),("B",1),("A",0)]) }
             }.padding(.horizontal).padding(.bottom, 6)
         }.background(Color.black).foregroundStyle(.white).preferredColorScheme(.dark)
         .onChange(of: phase) { _, new in if new != .active { engine.pause(true) } }

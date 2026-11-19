@@ -143,6 +143,8 @@ private final class Worker {
             axes = [pad.leftThumbstick.xAxis, pad.leftThumbstick.yAxis, pad.rightThumbstick.xAxis, pad.rightThumbstick.yAxis].map { Int32($0.value * 32767) }
         }
         if profile.swapAB { bits = (bits & ~3) | ((bits & 1) << 1) | ((bits & 2) >> 1) }
+        // The on-screen directional controls also drive games that steer with the left stick.
+        if buttons & 0x5000 != 0 { axes[0] = (buttons & 0x4000 != 0 ? 32767 : 0) - (buttons & 0x1000 != 0 ? 32767 : 0) }
         sc_pad(session, bits, axes[0], axes[1], axes[2], axes[3])
         let limited = info.isLowPowerModeEnabled || info.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
         let limit = Double(limited ? min(30, profile.fps) : profile.fps)

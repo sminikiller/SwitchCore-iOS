@@ -11,6 +11,15 @@ import zipfile
 URL = "https://github.com/switchbrew/nx-hbmenu/releases/download/v3.6.1/nx-hbmenu_v3.6.1.zip"
 DIGEST = "4790c58fdd75c4bcc644fa8135fa11c380cb3ebaf685e400e336031972410ee7"
 RALLY = pathlib.Path(__file__).resolve().parent.parent / "apps" / "ios" / "Resources" / "rally.nro"
+RACER_URL = "https://github.com/HopeAero/nfm-switch-port/releases/download/v1.2.3/nfm_switch.nro"
+RACER_DIGEST = "1fac25fd4aa950b825766e4859312f74bf2944846a07f93d0c86f29eb5b7501a"
+
+def fetch_racer(directory):
+    with urllib.request.urlopen(RACER_URL, timeout=90) as response:
+        data = response.read(14 << 20)
+    if hashlib.sha256(data).hexdigest() != RACER_DIGEST:
+        raise ValueError("Unexpected racing homebrew fingerprint")
+    (directory / "nfm_switch.nro").write_bytes(data)
 
 def fetch(directory):
     directory.mkdir(parents=True, exist_ok=True)
@@ -32,6 +41,7 @@ def main():
     args = parser.parse_args()
     if args.fetch_only is not None:
         fetch(args.fetch_only)
+        fetch_racer(args.fetch_only)
         return
     if not args.probe or not args.directory:
         parser.error("Specify the probe executable and an output directory")
