@@ -21,7 +21,7 @@ Con un generatore a configurazione singola usare `-DCMAKE_BUILD_TYPE=Release` e 
 | --- | --- |
 | Suite del core | CPU scalare e NEON, confronto differenziale, mapping, IPC, sincronizzazione, audio, loader e GPU. Vulkan desktop escluso dalla configurazione portatile. |
 | Contratto del bridge | Esecuzione a budget, protezione R/W/X e confini di pagina, rifiuto Switch 2, riavvio dopo errore. |
-| Rally | NRO compilata con libnx. Il guest presenta un campo 320 × 180 attraverso VI. Premere A e rilasciarlo deve cambiare e ripristinare il pixel di fondo. Il tasto + deve terminare il processo. |
+| Rally | NRO compilata con libnx. Il guest presenta un campo 320 × 180 attraverso VI. Premere A e rilasciarlo deve cambiare e ripristinare il pixel di fondo. Il test intercetta campioni PCM non nulli da audout. Il tasto + deve salvare il record nella SD virtuale del titolo e terminare il processo. |
 | Rally prolungato | Almeno 6.000 frame con lo stesso processo, seguito da uscita tramite HID. Il probe gira senza limitatore di velocità. |
 | nx-hbmenu 3.6.1 | Download dalla release Switchbrew con verifica SHA-256. Almeno un framebuffer 1280 × 720 con contenuto non uniforme. |
 | Test iOS | Xcode crea il binario iphoneos arm64. XCTest avvia il programma di triangoli e controlla i draw accelerati e i pixel quando è disponibile Metal. XCUITest avvia Rally dalla libreria, attende un frame, verifica pausa, ripresa e uscita. |

@@ -4,11 +4,13 @@ import UniformTypeIdentifiers
 @main
 struct SwitchCoreApp: App {
     @StateObject private var library = Library()
-    var body: some Scene { WindowGroup { LibraryView().environmentObject(library).tint(.teal) } }
+    @StateObject private var diagnostics = Diagnostics()
+    var body: some Scene { WindowGroup { LibraryView().environmentObject(library).environmentObject(diagnostics).tint(.teal) } }
 }
 
 struct LibraryView: View {
     @EnvironmentObject private var library: Library
+    @EnvironmentObject private var diagnostics: Diagnostics
     @State private var importing = false
     @State private var credits = false
     @State private var query = ""
@@ -70,6 +72,13 @@ struct LibraryView: View {
                         Text("SwitchCore 0.1.0 · GPLv3")
                         Link("Sorgenti del progetto", destination: URL(string: "https://github.com/sminikiller/SwitchCore-iOS")!)
                         Text("Core ARM64, Horizon e Maxwell derivati da NeXo 2. Rally usa libnx. MoltenVK traduce SPIR-V per Metal.")
+                        if !diagnostics.reports.isEmpty {
+                            Section("Rapporti iOS") {
+                                ForEach(diagnostics.reports, id: \.self) { url in
+                                    ShareLink(item: url, label: { Text(url.lastPathComponent) })
+                                }
+                            }
+                        }
                         ForEach(["GPLv3", "libnx", "MoltenVK"], id: \.self) { name in
                             if let url = Bundle.main.url(forResource: name, withExtension: "txt") {
                                 NavigationLink(name) {

@@ -31,6 +31,13 @@ jobs:
           xcrun simctl boot "$id" || true
           xcrun simctl bootstatus "$id" -b
           xcodebuild -quiet test -scheme SwitchCore -configuration Release -destination "id=$id" -parallel-testing-enabled NO -derivedDataPath out/sim -resultBundlePath Gameplay.xcresult | tee simulator.log
+      - name: Record XCTest results and screenshots
+        if: always() && hashFiles('Gameplay.xcresult/Info.plist') != ''
+        run: |
+          xcrun xcresulttool get test-results summary --path Gameplay.xcresult > test-summary.json
+          cat test-summary.json
+          xcrun xcresulttool export attachments --path Gameplay.xcresult --output-path screenshots
+          python3 -c 'import json; s=json.load(open("test-summary.json")); assert s["passedTests"] >= 1 and s["totalTestCount"] >= 2 and s["failedTests"] == 0, s'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -38,5 +45,7 @@ jobs:
           path: |
             *.log
             Gameplay.xcresult
+            test-summary.json
+            screenshots/
             SwitchCore-unsigned.ipa
 

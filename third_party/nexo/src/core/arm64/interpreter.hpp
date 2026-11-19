@@ -46,13 +46,9 @@ struct DecodedInstr {
 //   interpreter_simd.cpp     -> SIMD vectorial (dup, movi, cmeq, addp, ext, uzp1...)
 class Interpreter {
 public:
-    // Frecuencia del contador del sistema en Switch 2 (ver
-    // docs/05-switch2-system/compatibility-mode.md). La Switch 1 usaba 19.2 MHz.
+    // Switch 1 system counter. The deterministic interpreter models one cycle
+    // per instruction. This ratio is guest time, not measured CPU performance.
     static constexpr u64 TICK_FREQUENCY = 19'200'000;
-    // Velocidad de la CPU emulada: la de la consola en modo portatil, 998,4 MHz (Cortex-A78C).
-    // Contamos una instruccion por ciclo, asi que el contador del sistema avanza
-    // TICK_FREQUENCY / CPU_FREQUENCY ticks por instruccion (625 / 19968, unas 32 instrucciones
-    // por tick). Con el reloj ligado al tiempo real, el programa ve una CPU de 998,4 MHz.
     static constexpr u64 CPU_FREQUENCY = 998'400'000;
     static constexpr u64 TICKS_NUM = 1, TICKS_DEN = 52;   // TICK_FREQUENCY / CPU_FREQUENCY simplificado
     static_assert(TICK_FREQUENCY * TICKS_DEN == CPU_FREQUENCY * TICKS_NUM, "fraccion de ticks incorrecta");

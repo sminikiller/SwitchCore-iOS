@@ -252,8 +252,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Mapa de zonas. De momento es solo informativo (para svcQueryMemory y
-    // la interfaz): los permisos todavia no se comprueban al leer/escribir.
+    // Region map shared by svcQueryMemory and guest R/W/X checks.
     // ---------------------------------------------------------------------
 
     // Marca [base, base+size) como una zona. Si pisa zonas existentes, las recorta.

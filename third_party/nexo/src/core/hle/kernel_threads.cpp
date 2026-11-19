@@ -66,7 +66,7 @@ void Kernel::SetReg(KThread& t, unsigned index, u64 value) {
 
 u64 Kernel::NsToTicks(s64 ns) {
     if (ns <= 0) return 0;
-    // 31,25 MHz -> 1 tick = 32 ns
+    // Split nanoseconds before multiplication to avoid overflow.
     return u64(ns) / 15625 * 300 + u64(ns) % 15625 * 300 / 15625 + 1;
 }
 
@@ -741,7 +741,7 @@ u64 Kernel::WallClock(const void* kernel) {
     const s64 now = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
     const s64 elapsed = now - k->m_clockStartNs.load(std::memory_order_acquire);
-    return base + (elapsed > 0 ? u64(elapsed) / 15625 * 300 + u64(elapsed) % 15625 * 300 / 15625 : 0);   // 31,25 MHz: 1 tick = 32 ns
+    return base + (elapsed > 0 ? u64(elapsed) / 15625 * 300 + u64(elapsed) % 15625 * 300 / 15625 : 0);
 }
 
 void Kernel::SetMulticore(bool on) {

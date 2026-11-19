@@ -38,6 +38,16 @@ int main(int argc, char **argv) {
         return 1;
     }
     Image image;
+    size_t audibleFrames = 0;
+    sc_audio(
+        s.get(),
+        [](void *context, const int16_t *samples, size_t n) {
+            auto &count = *static_cast<size_t *>(context);
+            for (size_t i = 0; i < n; ++i)
+                if (samples[2 * i] || samples[2 * i + 1])
+                    ++count;
+        },
+        &audibleFrames);
     if (argc == 5)
         image.output = argv[4];
     SCStats stats{};
@@ -67,9 +77,15 @@ int main(int argc, char **argv) {
     std::cout << "title=" << sc_title(s.get()) << " instructions=" << stats.instructions
               << " guest_bytes=" << stats.guest_bytes << " frames=" << last << " size=" << image.width << "x"
               << image.height << " elapsed_s=" << seconds << " input=" << pressed << " release=" << released
-              << " pc=" << std::hex << stats.pc << std::dec << " status=" << sc_message(s.get()) << '\n'
+              << " audible_frames=" << audibleFrames << " pc=" << std::hex << stats.pc << std::dec
+              << " status=" << sc_message(s.get()) << '\n'
               << sc_log(s.get()) << '\n';
-    if (mode == "rally" || mode == "soak")
-        return !(released && stats.state == SC_EXITED && (mode != "soak" || last >= 6000));
+    if (mode == "rally" || mode == "soak") {
+        std::error_code ec;
+        auto save = std::filesystem::path(argv[2]) / "sdmc" / "rally-record.bin";
+        bool saved = std::filesystem::file_size(save, ec) == sizeof(uint32_t) && !ec;
+        return !(released && audibleFrames > 0 && saved && stats.state == SC_EXITED &&
+                 (mode != "soak" || last >= 6000));
+    }
     return mode == "exit" ? stats.state != SC_EXITED : last == 0;
 }
