@@ -178,6 +178,8 @@ void Kernel::SetupHomebrewProcess(u64 entry, u64 image_base, u64 image_size, con
     //   +0x400  lista de configuracion (Homebrew ABI)
     m_memory.MapRegion(LOADER_PAGE, Core::Memory::PAGE_SIZE, MemoryState::Static,
                        MemoryPermission::ReadExecute, "loader HLE");
+    m_memory.MapRegion(NEXT_LOAD_PATH, Core::Memory::PAGE_SIZE, MemoryState::Static,
+                       MemoryPermission::ReadWrite, "loader arguments");
     const u64 stub     = LOADER_PAGE;
     const u64 info_str = LOADER_PAGE + 0x100;
     const u64 argv_str = LOADER_PAGE + 0x200;

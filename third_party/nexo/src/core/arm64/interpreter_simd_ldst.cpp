@@ -13,10 +13,12 @@ namespace {
 // Copia 'bytes' bytes de memoria a un registro V (el resto queda a cero)
 V128 LoadV(Memory& m, u64 addr, unsigned bytes) {
     V128 v{};
+    m.RequireGuestAccess(addr, bytes, 1);
     m.ReadBytes(addr, &v, bytes);
     return v;
 }
 void StoreV(Memory& m, u64 addr, const V128& v, unsigned bytes) {
+    m.RequireGuestAccess(addr, bytes, 2);
     m.WriteBytes(addr, &v, bytes);
 }
 } // namespace

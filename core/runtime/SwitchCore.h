@@ -37,4 +37,3 @@ const char *sc_log(SCSession *);
 #ifdef __cplusplus
 }
 #endif
-

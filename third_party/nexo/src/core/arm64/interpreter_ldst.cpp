@@ -9,6 +9,7 @@ namespace NeXo2::Core {
 
 // Compare-and-swap atomico de 1, 2, 4 u 8 bytes. Si falla, 'expected' recibe el valor actual.
 static bool CasMemory(Memory& mem, u64 addr, unsigned bytes, u64& expected, u64 desired) {
+    mem.RequireGuestAccess(addr, bytes, 2);
     switch (bytes) {
         case 1: { u8  e = u8(expected);  const bool ok = mem.CompareExchange<u8>(addr, e, u8(desired));   expected = e; return ok; }
         case 2: { u16 e = u16(expected); const bool ok = mem.CompareExchange<u16>(addr, e, u16(desired)); expected = e; return ok; }
@@ -271,6 +272,7 @@ bool Interpreter::ExecLoadStoreExclusive(u32 instr) {
         } else {
             bool ok = m_exclusiveValid && m_exclusiveAddr == addr;
             if (ok) {
+                m_memory.RequireGuestAccess(addr, 2 * eb, 2);
                 const u64 lo = X(rt, sf), hi = X(rt2, sf);   // leer antes: Rs podria ser uno de ellos
                 if (sf) {
                     u64 el = m_exclusiveValue[0], eh = m_exclusiveValue[1];
@@ -293,6 +295,7 @@ bool Interpreter::ExecLoadStoreExclusive(u32 instr) {
         const unsigned eb = sf ? 8 : 4;
         const u64 mask = Ones(eb * 8);
         u64 old_lo = X(rs, sf) & mask, old_hi = X(rs + 1, sf) & mask;
+        m_memory.RequireGuestAccess(addr, 2 * eb, 2);
         const u64 new_lo = X(rt, sf) & mask, new_hi = X(rt + 1, sf) & mask;
         if (sf) {
             m_memory.CompareExchange128(addr, old_lo, old_hi, new_lo, new_hi);   // si falla: valores actuales

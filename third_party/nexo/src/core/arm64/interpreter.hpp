@@ -344,6 +344,7 @@ inline u64 Interpreter::ShiftReg(u64 value, unsigned type, unsigned amount, bool
 }
 
 inline u64 Interpreter::ReadMemory(u64 addr, unsigned size_bytes) {
+    m_memory.RequireGuestAccess(addr, size_bytes, 1);
     switch (size_bytes) {
         case 1:  return m_memory.Read<u8>(addr);
         case 2:  return m_memory.Read<u16>(addr);
@@ -353,6 +354,7 @@ inline u64 Interpreter::ReadMemory(u64 addr, unsigned size_bytes) {
 }
 
 inline void Interpreter::WriteMemory(u64 addr, u64 value, unsigned size_bytes) {
+    m_memory.RequireGuestAccess(addr, size_bytes, 2);
     // Una escritura normal rompe una reserva LDXR sobre esa direccion.
     if (m_exclusiveValid && m_exclusiveAddr == addr) m_exclusiveValid = false;
     switch (size_bytes) {

@@ -72,6 +72,8 @@ private final class Worker {
     var previousCount: UInt64 = 0
     var lastPresent = 0.0
     var lastUI = 0.0
+    var nextBudgetCheck = 0.0
+    var footprint: UInt64 = 0
     var fps = 0.0
     var renderer = "Maxwell software"
     var profile: Profile
@@ -119,6 +121,16 @@ private final class Worker {
         guard !paused else { return }
         let info = ProcessInfo.processInfo
         let start = info.systemUptime
+        if start >= nextBudgetCheck {
+            footprint = sc_process_footprint()
+            let available = sc_available_memory()
+            if available > 0 && available < 48 * 1024 * 1024 {
+                consumer?(nil, "", "Sessione arrestata: memoria disponibile inferiore a 48 MiB.", true)
+                stop()
+                return
+            }
+            nextBudgetCheck = start + 1
+        }
         var bits = buttons
         var axes = [Int32](repeating: 0, count: 4)
         if let pad = (GCController.current ?? GCController.controllers().first)?.extendedGamepad {
@@ -159,7 +171,8 @@ private final class Worker {
             pendingFrame = nil
             let text = String(format: "%.1f FPS guest  ·  %.1f ms/frame  ·  %.1f MiB guest", fps, fps > 0 ? 1000/fps : 0, Double(stats.guest_bytes)/1048576) + "\n" + renderer + " · draw GPU " + String(stats.gpu_draws)
             let log = finished ? String(cString: sc_message(session)) + "\n" + String(cString: sc_log(session)) : String(cString: sc_log(session))
-            consumer?(frame, text, log, finished)
+            let processMemory = String(format: " · %.1f MiB app", Double(footprint) / 1048576)
+            consumer?(frame, text + processMemory, log, finished)
             lastUI = start
         }
         if finished { stop() }

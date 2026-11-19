@@ -77,11 +77,20 @@ bool Display::PresentAt(Core::Memory& memory, const GraphicBufferInfo& buf, u64 
     if (nvmap_address == 0 || buf.width == 0 || buf.height == 0 || buf.pitch == 0) return false;
     if (buf.width > 4096 || buf.height > 4096) return false;
 
+    const u32 bpp = BytesPerPixel(buf.format);
+    if (buf.layout != LAYOUT_PITCH && buf.layout != LAYOUT_BLOCK_LINEAR) return false;
+    if (buf.pitch < buf.width * bpp || buf.pitch > 64 * 1024 || buf.block_height_log2 > 5) return false;
+    if (buf.layout == LAYOUT_BLOCK_LINEAR && buf.pitch % 64 != 0) return false;
+
     // 1) Leer el buffer de la memoria del programa
     const u32 block_px = 8u << buf.block_height_log2;
     const u32 rows = (buf.layout == LAYOUT_BLOCK_LINEAR) ? ((buf.height + block_px - 1) / block_px) * block_px
                                                          : buf.height;
-    std::vector<u8> raw(size_t(buf.pitch) * rows);
+    const u64 bytes = u64(buf.pitch) * rows;
+    if (bytes > 64ull * 1024 * 1024 || nvmap_address >= Core::Memory::ADDRESS_SPACE ||
+        buf.offset > Core::Memory::ADDRESS_SPACE - nvmap_address ||
+        bytes > Core::Memory::ADDRESS_SPACE - nvmap_address - buf.offset) return false;
+    std::vector<u8> raw(static_cast<size_t>(bytes));
     memory.ReadBytes(nvmap_address + buf.offset, raw.data(), raw.size());
 
     // 2) Pasar a lineal si viene en bloques
@@ -96,7 +105,6 @@ bool Display::PresentAt(Core::Memory& memory, const GraphicBufferInfo& buf, u64 
     }
 
     // 3) Convertir cada pixel a RGBA
-    const u32 bpp = BytesPerPixel(buf.format);
     std::lock_guard lock(m_frameMutex);
     m_frame.width = buf.width;
     m_frame.height = buf.height;

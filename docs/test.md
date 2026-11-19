@@ -1,0 +1,46 @@
+# Riprodurre le verifiche
+
+Il frontend e il programma switchcore-probe usano lo stesso bridge C, lo stesso caricatore NRO e lo stesso interprete. La cartella passata al probe ospita SD virtuale e salvataggi di un solo titolo.
+
+## Windows
+
+Da PowerShell con CMake 3.25+ e un compilatore C++20 disponibili:
+
+```powershell
+cmake -S . -B build
+cmake --build build --config Release --parallel 4
+ctest --test-dir build -C Release --output-on-failure
+build/Release/switchcore-probe.exe apps/ios/Resources/rally.nro build/rally-title rally build/rally.ppm
+build/Release/switchcore-probe.exe apps/ios/Resources/rally.nro build/soak-title soak
+python tools/verify-independent.py build/Release/switchcore-probe.exe build/independent
+```
+
+Con un generatore a configurazione singola usare `-DCMAKE_BUILD_TYPE=Release` e l'eseguibile in `build/`. Ogni esecuzione del probe stampa istruzioni, byte delle pagine guest, frame, dimensioni, PC e tempo trascorso. I file PPM sono catture del framebuffer restituito dal guest.
+
+| Prova | Criterio controllato |
+| --- | --- |
+| Suite del core | CPU scalare e NEON, confronto differenziale, mapping, IPC, sincronizzazione, audio, loader e GPU. Vulkan desktop escluso dalla configurazione portatile. |
+| Contratto del bridge | Esecuzione a budget, protezione R/W/X e confini di pagina, rifiuto Switch 2, riavvio dopo errore. |
+| Rally | NRO compilata con libnx. Il guest presenta un campo 320 × 180 attraverso VI. Premere A e rilasciarlo deve cambiare e ripristinare il pixel di fondo. Il tasto + deve terminare il processo. |
+| Rally prolungato | Almeno 6.000 frame con lo stesso processo, seguito da uscita tramite HID. Il probe gira senza limitatore di velocità. |
+| nx-hbmenu 3.6.1 | Download dalla release Switchbrew con verifica SHA-256. Almeno un framebuffer 1280 × 720 con contenuto non uniforme. |
+| Test iOS | Xcode crea il binario iphoneos arm64. XCTest avvia il programma di triangoli e controlla i draw accelerati e i pixel quando è disponibile Metal. XCUITest avvia Rally dalla libreria, attende un frame, verifica pausa, ripresa e uscita. |
+
+## iOS
+
+Su macOS con Xcode, Metal Toolchain e XcodeGen installati:
+
+```sh
+bash tools/prepare-metal.sh
+xcodegen generate
+xcodebuild -scheme SwitchCore -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+```
+
+GitHub Actions conserva l'IPA senza firma, il bundle XCTest e i log. L'installazione su un iPhone fisico richiede la firma con un team Apple autorizzato. Per riprodurre una misura su A16 selezionare il proprio team in Xcode, installare, aprire Rally, premere A, muovere la racchetta con ↑/↓ e chiudere con +. Registrare build, versione iOS, profilo, durata, FPS guest e memoria app. Una misura del simulatore o del probe Windows non vale come misura A16.
+
+## Scala di compatibilità
+
+Registrare per ciascun binario il più alto livello osservato con le prove intermedie disponibili. I dieci livelli sono riconoscimento, caricamento, creazione del processo, esecuzione CPU, servizi HLE, primo frame, input, interazione, stabilità prolungata e misura sul dispositivo fisico. Il primo frame di nx-hbmenu documenta il livello 6. L'esito di Rally non si estende ad altri eseguibili.
+
+La homebrew inclusa viene ricostruita da `tests/homebrew/rally/main.c` nel container devkitA64 identificato dal digest nel workflow Homebrew. Il tarball ufficiale di MoltenVK è verificato contro SHA-256 prima della compilazione. La sorgente di NeXo 2 è fissata in `third_party/nexo/NOTICE.md`.
+

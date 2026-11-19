@@ -119,6 +119,7 @@ bool Interpreter::ExecBranchSystem(u32 instr) {
         if ((instr & 0xFFFFFFE0u) == 0xD50B7420u) {                      // DC ZVA, Xt
             const u64 addr = X(Bits(instr, 0, 5)) & ~(DC_ZVA_BLOCK - 1);
             static const u8 zeros[DC_ZVA_BLOCK] = {};
+            m_memory.RequireGuestAccess(addr, DC_ZVA_BLOCK, 2);
             m_memory.WriteBytes(addr, zeros, DC_ZVA_BLOCK);
         }
         return true;

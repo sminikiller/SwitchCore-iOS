@@ -24,7 +24,8 @@ struct Screen: UIViewRepresentable {
             guard let f = frame, let device = view.device, let queue, let pipeline,
                   let drawable = view.currentDrawable, let descriptor = view.currentRenderPassDescriptor,
                   let command = queue.makeCommandBuffer() else { return }
-            if texture?.width != f.width || texture?.height != f.height {
+            // Previously submitted commands retain their own immutable guest texture.
+            if uploaded != f.serial {
                 let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: f.width, height: f.height, mipmapped: false)
                 desc.usage = .shaderRead
                 texture = device.makeTexture(descriptor: desc)

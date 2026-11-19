@@ -10,6 +10,7 @@ struct SwitchCoreApp: App {
 struct LibraryView: View {
     @EnvironmentObject private var library: Library
     @State private var importing = false
+    @State private var credits = false
     @State private var query = ""
     @State private var filter = 0
     @State private var playing: Title?
@@ -57,7 +58,29 @@ struct LibraryView: View {
                 }
             }.navigationTitle("Libreria")
             .searchable(text: $query, prompt: "Cerca un titolo")
-            .toolbar { Button("Importa", systemImage: "plus") { importing = true } }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Informazioni", systemImage: "info.circle") { credits = true }
+                }
+                ToolbarItem(placement: .topBarTrailing) { Button("Importa", systemImage: "plus") { importing = true } }
+            }
+            .sheet(isPresented: $credits) {
+                NavigationStack {
+                    List {
+                        Text("SwitchCore 0.1.0 · GPLv3")
+                        Link("Sorgenti del progetto", destination: URL(string: "https://github.com/sminikiller/SwitchCore-iOS")!)
+                        Text("Core ARM64, Horizon e Maxwell derivati da NeXo 2. Rally usa libnx. MoltenVK traduce SPIR-V per Metal.")
+                        ForEach(["GPLv3", "libnx", "MoltenVK"], id: \.self) { name in
+                            if let url = Bundle.main.url(forResource: name, withExtension: "txt") {
+                                NavigationLink(name) {
+                                    ScrollView { Text((try? String(contentsOf: url, encoding: .utf8)) ?? "").padding() }
+                                        .navigationTitle(name)
+                                }
+                            }
+                        }
+                    }.navigationTitle("Informazioni").toolbar { Button("Fine") { credits = false } }
+                }
+            }
             .fileImporter(isPresented: $importing, allowedContentTypes: [UTType(filenameExtension: "nro") ?? .data]) { result in
                 do { try library.importFile(result.get()) }
                 catch { library.error = error.localizedDescription }

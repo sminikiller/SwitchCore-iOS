@@ -75,6 +75,8 @@ u64 Interpreter::RunPlain(u64 max_steps) {
                                          // se borra (Memory::Clear) fuera de Run, al cargar otro programa
     while (executed < max_steps && !m_halted) {
         const u64 pc = m_state.pc;
+        if (pc & 3) { Halt("PC ARM64 disallineato"); break; }
+        m_memory.RequireGuestAccess(pc, 4, 4);
 
         // 1) FETCH: 32 bits desde memoria en PC (todas las instrucciones ARM64 miden 4 bytes).
         u32 instr;
@@ -159,6 +161,8 @@ u64 Interpreter::RunCached(u64 max_steps) {
         }
 
         const u64 pc = m_state.pc;
+        if (pc & 3) { Halt("PC ARM64 disallineato"); break; }
+        m_memory.RequireGuestAccess(pc, 4, 4);
         // Cambio de pagina o PC desalineado (los 2 bits bajos tambien cuentan en la comparacion)
         if ((pc & (~(Memory::PAGE_SIZE - 1) | 3)) != page_base) [[unlikely]] {
             if (pc & 3) {                        // PC desalineado: camino lento

@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 jobs:
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx run --spec clang-format==18.1.8 clang-format --dry-run --Werror core/runtime/* backends/*/*.hpp tools/probe.cpp tests/integration/runtime_tests.cpp
+      - run: clang++ --analyze -Xanalyzer -analyzer-output=text -std=c++20 -I. -Ithird_party/nexo/src -Ithird_party/nexo/src/core -Ithird_party/nexo/src/core/memory -Ithird_party/nexo/src/core/arm64 core/runtime/SwitchCore.cpp
   desktop:
     strategy:
       fail-fast: false
@@ -19,6 +25,12 @@ jobs:
       - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build --config Release --parallel 4
       - run: ctest --test-dir build -C Release --output-on-failure --output-junit report.xml
+      - name: Independent homebrew first frame
+        shell: bash
+        run: |
+          probe=build/switchcore-probe
+          if [[ "$RUNNER_OS" == Windows ]]; then probe=build/Release/switchcore-probe.exe; fi
+          python tools/verify-independent.py "$probe" build/independent
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -27,4 +39,5 @@ jobs:
             build/report.xml
             build/Testing/Temporary/LastTest.log
             build/rally.ppm
+            build/independent/hbmenu.ppm
 

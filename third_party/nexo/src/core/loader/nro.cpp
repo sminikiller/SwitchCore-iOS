@@ -80,6 +80,31 @@ NroLoadResult LoadNro(const std::vector<u8>& file, Core::Memory& memory, u64 bas
     if (u64(h.ro_offset) < u64(h.text_offset) + h.text_size ||
         u64(h.data_offset) < u64(h.ro_offset) + h.ro_size)    return fail("segmentos solapados o desordenados");
     if (u64(h.data_offset) + h.data_size > h.size)  return fail("los segmentos se salen de la imagen");
+    u32 first = 0, mod = 0;
+    ReadAt(file, 0, first);
+    ReadAt(file, 4, mod);
+    // NRO has no ELF e_machine field. Its ABI begins with a PC-relative A64 B.
+    if ((first >> 26) != 0x05 || u64(first & 0x03ffffffu) * 4 >= h.text_size)
+        return fail("entry point ARM64 fuori dal segmento di codice");
+    if (mod != 0) {
+        u32 magic = 0;
+        s32 delta = 0;
+        if (u64(mod) + 28 > h.size || !ReadAt(file, mod, magic) || magic != 0x30444f4d ||
+            !ReadAt(file, u64(mod) + 4, delta))
+            return fail("intestazione MOD0 non valida");
+        if (delta) {
+            const s64 dynamic = s64(mod) + delta;
+            if (dynamic < 0 || u64(dynamic) > h.size) return fail("tabella dinamica fuori immagine");
+            bool terminated = false;
+            for (u64 pos = u64(dynamic); pos + 16 <= h.size; pos += 16) {
+                u64 tag = 0;
+                ReadAt(file, pos, tag);
+                if (tag == 0) { terminated = true; break; }
+                if (tag == 1) return fail("dipendenza ELF esterna non supportata (DT_NEEDED)");
+            }
+            if (!terminated) return fail("tabella dinamica senza terminatore");
+        }
+    }
 
     // 3) Copiar la imagen a memoria. El .bss no esta en el archivo: es memoria a cero.
     memory.WriteBytes(base, file.data(), h.size);

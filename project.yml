@@ -45,7 +45,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.sminikiller.SwitchCore
-        SWIFT_OBJC_BRIDGING_HEADER: core/runtime/SwitchCore.h
+        SWIFT_OBJC_BRIDGING_HEADER: apps/ios/App/Bridge.h
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: SwitchCore
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

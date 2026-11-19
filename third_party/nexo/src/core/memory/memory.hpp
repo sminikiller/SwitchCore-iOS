@@ -9,6 +9,8 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <stdexcept>
+#include <cstdio>
 #include <type_traits>
 #include <vector>
 #include "common/types.hpp"
@@ -61,6 +63,32 @@ public:
 
     Memory() = default;
 
+    // Host loader and kernel writes bypass guest MMU permissions. The portable
+    // frontend uses the single-owner scheduler when these caches are enabled.
+    void EnableGuestProtection() { m_checkGuest = true; }
+    void RequireGuestAccess(VAddr addr, u64 size, unsigned permission) {
+        if (!m_checkGuest) return;
+        auto &cached = m_checked[permission == 4 ? 2 : permission == 2 ? 1 : 0];
+        if (addr < ADDRESS_SPACE && size <= ADDRESS_SPACE - addr) {
+            const u64 end = addr + size;
+            if (addr >= cached.first && end <= cached.second) return;
+            for (u64 pos = addr; pos < end;) {
+                const auto region = QueryRegion(pos);
+                if ((unsigned(region.perm) & permission) == 0) break;
+                pos = region.End();
+                if (pos >= end) {
+                    if (addr >= region.base) cached = {region.base, pos};
+                    return;
+                }
+            }
+        }
+        char reason[120];
+        std::snprintf(reason, sizeof(reason), "MMU: accesso %c negato a 0x%llx (%llu byte)",
+                      permission == 4 ? 'X' : permission == 2 ? 'W' : 'R',
+                      (unsigned long long)addr, (unsigned long long)size);
+        throw std::runtime_error(reason);
+    }
+
     // Borra todo (paginas y zonas). Se usa al cargar un programa nuevo.
     void Clear() {
         std::scoped_lock lock(m_pageMutex, m_codeMutex);
@@ -73,6 +101,7 @@ public:
         }
         m_l2Tables.clear();
         m_pages.clear();
+        m_checked = {};
         m_regions.clear();
         m_codeWrites = 0;
         ++m_generation;
@@ -246,6 +275,7 @@ public:
 
     // Quita [base, base+size) del mapa (partiendo las zonas que lo crucen).
     void UnmapRegion(VAddr base, u64 size) {
+        m_checked = {};
         const VAddr end = base + size;
         auto it = m_regions.lower_bound(base);
         if (it != m_regions.begin()) --it; // la zona anterior puede empezar antes y cruzar 'base'
@@ -382,6 +412,8 @@ public:
     }
 
 private:
+    bool m_checkGuest = false;
+    std::array<std::pair<u64, u64>, 3> m_checked{};
     struct Page {
         alignas(64) std::array<u8, PAGE_SIZE> bytes{};   // los 4 KB (a cero al crearla)
         std::atomic<bool> code{false};       // la CPU tiene instrucciones decodificadas de aqui

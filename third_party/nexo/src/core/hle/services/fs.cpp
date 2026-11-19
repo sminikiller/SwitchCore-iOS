@@ -51,6 +51,8 @@ fs::path ResolveGuestPath(const fs::path& root, const std::string& guest) {
         if (part.empty() || part == ".") continue;
         if (part == ".." || part.find('\\') != std::string::npos || part.find(':') != std::string::npos) return {};
         result /= FromUtf8(part);
+        std::error_code ec;
+        if (fs::is_symlink(fs::symlink_status(result, ec))) return {};
     }
     return result;
 }

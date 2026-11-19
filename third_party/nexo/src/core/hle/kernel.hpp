@@ -50,9 +50,9 @@ namespace Layout {
     constexpr u64 STACK_REGION_SIZE = 0x0000'0000'1000'0000;
     constexpr u64 MAIN_STACK_SIZE   = 0x0000'0000'0010'0000; // 1 MB
     constexpr u64 LOADER_PAGE       = 0x0000'0001'FFFE'0000; // stub de salida + config del loader
-    constexpr u64 NEXT_LOAD_PATH    = LOADER_PAGE + 0x600;   // envSetNextLoad: ruta (0x200 bytes)
+    constexpr u64 NEXT_LOAD_PATH    = LOADER_PAGE + 0x1000;   // envSetNextLoad: ruta (0x200 bytes)
     constexpr u64 NEXT_LOAD_PATH_SIZE = 0x200;
-    constexpr u64 NEXT_LOAD_ARGV    = LOADER_PAGE + 0x800;   // envSetNextLoad: argv (0x800 bytes)
+    constexpr u64 NEXT_LOAD_ARGV    = LOADER_PAGE + 0x1200;   // envSetNextLoad: argv (0x800 bytes)
     constexpr u64 NEXT_LOAD_ARGV_SIZE = 0x800;
     constexpr u64 TLS_PAGE          = 0x0000'0001'FFFF'0000; // TLS del hilo principal
     // TLS de los demas hilos: paginas hacia abajo desde TLS_PAGE (8 hilos por pagina)
