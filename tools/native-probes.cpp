@@ -19,6 +19,11 @@ int main() {
         std::cout << (reservable ? '+' : '.');
     std::cout << " largest=" << (addresses.largest_size >> 20) << "MiB@0x" << std::hex
               << addresses.largest_base << std::dec << '\n';
+    std::cout << "addresses_above_64_gib=";
+    for (const auto &high : probe_high_addresses())
+        std::cout << (high.address >> 30) << 'G' << (high.reservable ? '+' : '.') << ' ';
+    std::cout << "cs_flags=0x" << std::hex << code_signing_flags() << std::dec
+              << " debugger=" << debugger_attached() << '\n';
 
     std::string dual, jit;
     const bool dual_ok = probe_dual_mapping(dual);

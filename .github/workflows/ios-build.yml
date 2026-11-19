@@ -28,6 +28,34 @@ jobs:
           cp -R out/device/Build/Products/Release-iphoneos/SwitchCore.app Payload/
           file Payload/SwitchCore.app/SwitchCore | grep arm64
           ditto -c -k --keepParent Payload SwitchCore-unsigned.ipa
+      - name: Sign the IPA ad hoc with the app entitlements
+        run: |
+          # Signers that copy the app's own entitlements find them in this signature; signers that take them
+          # from the provisioning profile replace them (docs/iphone.md). iOS reads the DER form.
+          codesign --force --sign - --entitlements apps/ios/SwitchCore.entitlements --generate-entitlement-der --timestamp=none Payload/SwitchCore.app
+          codesign --verify --verbose=2 Payload/SwitchCore.app
+          python3 - Payload/SwitchCore.app/SwitchCore apps/ios/SwitchCore.entitlements <<'EOF' | tee entitlements.txt
+          import plistlib, struct, sys
+          binary = open(sys.argv[1], "rb").read()
+          expected = plistlib.load(open(sys.argv[2], "rb"))
+          assert struct.unpack_from("<I", binary, 0)[0] == 0xFEEDFACF, "thin arm64 Mach-O expected"
+          offset, slots = 32, {}
+          for _ in range(struct.unpack_from("<I", binary, 16)[0]):
+              command, size = struct.unpack_from("<II", binary, offset)
+              if command == 0x1D:  # LC_CODE_SIGNATURE -> SuperBlob with one blob per slot
+                  base = struct.unpack_from("<I", binary, offset + 8)[0]
+                  magic, _, count = struct.unpack_from(">III", binary, base)
+                  assert magic == 0xFADE0CC0, hex(magic)
+                  for index in range(count):
+                      slot, at = struct.unpack_from(">II", binary, base + 12 + 8 * index)
+                      kind, length = struct.unpack_from(">II", binary, base + at)
+                      slots[slot] = (kind, binary[base + at + 8 : base + at + length])
+              offset += size
+          assert slots[5][0] == 0xFADE7171 and plistlib.loads(slots[5][1]) == expected, slots.get(5)
+          assert slots.get(7, (0, b""))[0] == 0xFADE7172, "DER entitlements missing"
+          print("Ad hoc signature with XML and DER entitlements:", ", ".join(f"{k}={v}" for k, v in sorted(expected.items())))
+          EOF
+          ditto -c -k --keepParent Payload SwitchCore.ipa
       - name: Run the game on an iPhone simulator
         run: |
           set -o pipefail
@@ -55,5 +83,7 @@ jobs:
             test-summary.json
             screenshots/
             diagnostics/
+            entitlements.txt
+            SwitchCore.ipa
             SwitchCore-unsigned.ipa
 

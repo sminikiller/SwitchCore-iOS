@@ -16,6 +16,7 @@ struct LibraryView: View {
     @State private var copying = false
     @State private var sdTitle: Title?
     @State private var credits = false
+    @State private var native = false
     @State private var query = ""
     @State private var filter = 0
     @State private var playing: Title?
@@ -70,6 +71,9 @@ struct LibraryView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Informazioni", systemImage: "info.circle") { credits = true }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Diagnostica nativa", systemImage: "cpu") { native = true }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     if copying { ProgressView().accessibilityLabel("Importazione in corso") }
                     else {
@@ -80,6 +84,7 @@ struct LibraryView: View {
                     }
                 }
             }
+            .sheet(isPresented: $native) { NativeDiagnosticsView() }
             .sheet(isPresented: $credits) {
                 NavigationStack {
                     List {

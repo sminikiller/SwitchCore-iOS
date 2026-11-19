@@ -102,8 +102,9 @@ struct ExtractedGame {
         return Self(id: id, name: source.lastPathComponent, staging: staged)
     }
 
-    // A homebrew may keep its own assets at the SD root (for example stk-data/).
-    // Install a new directory atomically alongside existing saves.
+    // A homebrew may keep its own assets at the SD root (for example stk-data/), and a menu such as
+    // nx-hbmenu lists the NROs in switch/. Install the directory alongside existing saves. If it already
+    // exists (hbmenu creates an empty switch/ on its first launch), add the new files without replacing any.
     static func installSDDirectory(_ source: URL, in title: URL) throws {
         let fm = FileManager.default
         let scoped = source.startAccessingSecurityScopedResource()
@@ -113,7 +114,6 @@ struct ExtractedGame {
         let staging = title.appendingPathComponent(".sd-import-" + UUID().uuidString)
         defer { try? fm.removeItem(at: staging) }
         try fm.createDirectory(at: sd, withIntermediateDirectories: true)
-        guard !fm.fileExists(atPath: dest.path) else { throw CocoaError(.fileWriteFileExists) }
         var coordinatorError: NSError?
         var result: Result<Void, Error>?
         NSFileCoordinator().coordinate(readingItemAt: source, options: .withoutChanges, error: &coordinatorError) { input in
@@ -136,11 +136,29 @@ struct ExtractedGame {
                     }
                 }
                 try copyTree(input, to: staging)
-                try fm.moveItem(at: staging, to: dest)
+                try merge(staging, into: dest, apply: false)
+                try merge(staging, into: dest, apply: true)
             }
         }
         if let coordinatorError { throw coordinatorError }
         guard let result else { throw ImportError.invalidFile(source.lastPathComponent) }
         try result.get()
+    }
+
+    // Moves what is missing from target; a file that already exists fails the whole import, which the
+    // first pass (apply false) checks before anything moves.
+    private static func merge(_ source: URL, into target: URL, apply: Bool) throws {
+        let fm = FileManager.default
+        guard let existing = try? target.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else {
+            if apply { try fm.moveItem(at: source, to: target) }
+            return
+        }
+        guard existing.isDirectory == true, existing.isSymbolicLink != true,
+              try source.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
+            throw CocoaError(.fileWriteFileExists)
+        }
+        for item in try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil) {
+            try merge(item, into: target.appendingPathComponent(item.lastPathComponent), apply: apply)
+        }
     }
 }

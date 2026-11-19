@@ -21,6 +21,7 @@ targets:
       - path: third_party/nexo/src/core/arm64/fp_ops.cpp
         compilerFlags: '-frounding-math'
       - core/runtime
+      - core/native
     settings:
       base:
         GCC_PREPROCESSOR_DEFINITIONS: ['$(inherited)', 'NEXO2_HAS_VULKAN=1', 'SWITCHCORE_MOLTENVK=1']
@@ -29,7 +30,7 @@ targets:
     platform: iOS
     sources:
       - path: apps/ios
-        excludes: ['Resources/**']
+        excludes: ['Resources/**', 'SwitchCore.entitlements']
       - path: apps/ios/Resources
         buildPhase: resources
     dependencies:
@@ -46,6 +47,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.sminikiller.SwitchCore
         SWIFT_OBJC_BRIDGING_HEADER: apps/ios/App/Bridge.h
+        # Device builds only: CI signs the IPA ad hoc with this file, the user's signer replaces it.
+        'CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]': apps/ios/SwitchCore.entitlements
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: SwitchCore
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
@@ -72,7 +75,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.sminikiller.SwitchCore.Tests
         GENERATE_INFOPLIST_FILE: YES
-        SWIFT_OBJC_BRIDGING_HEADER: core/runtime/SwitchCore.h
+        SWIFT_OBJC_BRIDGING_HEADER: apps/ios/App/Bridge.h
   SwitchCoreUITests:
     type: bundle.ui-testing
     platform: iOS
