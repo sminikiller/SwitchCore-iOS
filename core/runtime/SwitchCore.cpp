@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "SwitchCore.h"
+#include "SdPath.hpp"
 #include "backends/switch1/Profile.hpp"
 #include "backends/switch2-experimental/Research.hpp"
 #include "core/system.hpp"
 #ifdef NEXO2_HAS_VULKAN
 #include "video_core/vulkan/vk_rasterizer.hpp"
 #endif
-#include <cstring>
-#include <fstream>
+#include <algorithm>
+#include <filesystem>
 #include <stdexcept>
 
 using NeXo2::Core::System;
@@ -20,11 +21,55 @@ struct SCSession {
     SCStats stats{};
     std::string message;
     std::string title;
+    fs::path menu;           // NRO opened by sc_load; programs it launches return to it
+    bool launched = false;   // the running program was chosen through envSetNextLoad
+    uint64_t frame_base = 0; // frames presented by earlier programs of this session
     void fail(const std::string &reason) {
         stats.state = SC_FAULT;
         message = reason;
     }
 };
+
+namespace {
+// Imported files and files chosen by the guest share the same size limit.
+void start(SCSession &s, const fs::path &path, const std::string &argv) {
+    std::error_code error;
+    const auto length = fs::file_size(path, error);
+    if (error)
+        throw std::runtime_error("Impossibile aprire la NRO.");
+    if (length < 0x80 || length > switchcore::switch1::max_nro)
+        throw std::runtime_error("Dimensione NRO fuori dai limiti (128 MiB).");
+    const auto name = path.u8string();
+    if (!s.system->LoadNroFile(std::string(name.begin(), name.end()), argv))
+        throw std::runtime_error(s.system->GetLastError());
+    s.title = s.system->GetNroInfo()->title;
+}
+
+// Homebrew loader contract: a menu stores the chosen NRO with envSetNextLoad and exits. A program it
+// launched returns to the menu when it ends without choosing another one.
+bool resume(SCSession &s) {
+    auto &kernel = s.system->GetKernel();
+    const std::string next = kernel.GetNextLoadPath();
+    if (next.empty() && !s.launched)
+        return false;
+    fs::path target = s.menu;
+    std::string argv;
+    if (!next.empty()) {
+        const auto file = switchcore::sd_file(kernel.GetSdmcRoot(), next);
+        if (!file)
+            throw std::runtime_error("NRO richiesta fuori dalla SD del titolo.");
+        target = *file;
+        argv = kernel.GetNextLoadArgv();
+    }
+    {
+        auto guard = kernel.GetDisplay().LockFrame();
+        s.frame_base += kernel.GetDisplay().Frame().count;
+    }
+    start(s, target, argv);
+    s.launched = !next.empty();
+    return true;
+}
+} // namespace
 
 SCSession *sc_create() { return new (std::nothrow) SCSession; }
 void sc_destroy(SCSession *s) { delete s; }
@@ -38,26 +83,13 @@ bool sc_load(SCSession *s, SCBackend backend, const char *file, const char *dire
             throw std::runtime_error(switchcore::switch2::status);
         if (!file || !directory || !*directory)
             throw std::runtime_error("Percorso mancante.");
-        const auto path = fs::u8path(file);
-        std::ifstream stream(path, std::ios::binary | std::ios::ate);
-        if (!stream)
-            throw std::runtime_error("Impossibile aprire la NRO.");
-        const auto length = stream.tellg();
-        if (length < 0x80 || uint64_t(length) > switchcore::switch1::max_nro)
-            throw std::runtime_error("Dimensione NRO fuori dai limiti (128 MiB).");
-        std::vector<u8> data(static_cast<size_t>(length));
-        stream.seekg(0);
-        if (!stream.read(reinterpret_cast<char *>(data.data()), length))
-            throw std::runtime_error("Lettura NRO incompleta.");
         auto root = fs::u8path(directory) / "sdmc";
         fs::create_directories(root);
         s->system = std::make_unique<System>();
         s->system->GetKernel().SetSdmcRoot(root);
-        const auto name = path.filename().u8string();
-        if (!s->system->LoadNro(data, std::string(name.begin(), name.end())))
-            throw std::runtime_error(s->system->GetLastError());
+        s->menu = fs::u8path(file);
+        start(*s, s->menu, "");
         s->system->GetMemory().EnableGuestProtection();
-        s->title = s->system->GetNroInfo()->title;
         s->stats.state = SC_RUNNING;
         return true;
     } catch (const std::exception &e) {
@@ -112,14 +144,16 @@ SCStats sc_step(SCSession *s, uint32_t budget) {
             s->stats.gpu_draws = hw->GetStats().draws;
 #endif
         if (kernel.HasExited()) {
-            s->stats.state = SC_EXITED;
-            s->message = "Processo terminato.";
+            if (!resume(*s)) {
+                s->stats.state = SC_EXITED;
+                s->message = "Processo terminato.";
+            }
         } else if (sys.GetCpu().IsHalted())
             s->fail(sys.GetCpu().GetHaltReason());
         else if (s->stats.guest_bytes > (512ull << 20))
             s->fail("Budget di memoria guest superato.");
         auto guard = kernel.GetDisplay().LockFrame();
-        s->stats.frames = kernel.GetDisplay().Frame().count;
+        s->stats.frames = s->frame_base + kernel.GetDisplay().Frame().count;
     } catch (const std::exception &e) {
         s->stats.pc = s->system->GetCpu().GetState().pc;
         s->fail(e.what());
@@ -132,11 +166,12 @@ bool sc_frame(SCSession *s, uint64_t after, SCFrameSink sink, void *context, uin
     auto &display = s->system->GetKernel().GetDisplay();
     auto guard = display.LockFrame();
     const auto &frame = display.Frame();
-    if (frame.count <= after || !frame.width || !frame.height ||
+    const uint64_t count = s->frame_base + frame.count;
+    if (!frame.count || count <= after || !frame.width || !frame.height ||
         frame.rgba.size() != uint64_t(frame.width) * frame.height)
         return false;
     sink(context, frame.rgba.data(), frame.width, frame.height);
-    *number = frame.count;
+    *number = count;
     return true;
 }
 const char *sc_message(SCSession *s) { return s ? s->message.c_str() : "Sessione assente."; }

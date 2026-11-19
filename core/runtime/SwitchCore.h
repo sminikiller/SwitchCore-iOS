@@ -19,6 +19,8 @@ typedef struct {
 } SCStats;
 // Calls on a session are serialized by its owner. Frame/PCM pointers live only
 // inside their synchronous callback. Audio is interleaved stereo, signed 16-bit, 48 kHz.
+// A program that exits after envSetNextLoad continues with the chosen NRO from the title's
+// virtual SD; a program started that way returns to the loaded NRO. Frame numbers keep growing.
 typedef void (*SCFrameSink)(void *, const uint32_t *, uint32_t, uint32_t);
 typedef void (*SCAudioSink)(void *, const int16_t *, size_t);
 SCSession *sc_create(void);

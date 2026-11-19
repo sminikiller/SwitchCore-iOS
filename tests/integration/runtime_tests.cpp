@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "core/memory/memory.hpp"
+#include "core/runtime/SdPath.hpp"
 #include "core/runtime/SwitchCore.h"
 #include "video_core/gpu.hpp"
 #include <filesystem>
@@ -36,6 +37,14 @@ int main(int argc, char **argv) {
         expect(!allowed(UINT64_MAX - 1, 4, 1), "reject wrapped range");
         mem.UnmapRegion(0x2000, 0x1000);
         expect(!allowed(0x2000, 1, 1), "invalidate cached permissions");
+        const auto sd = std::filesystem::path(argv[2]) / "sd-paths";
+        std::filesystem::create_directories(sd / "switch");
+        const auto game = std::filesystem::weakly_canonical(sd / "switch" / "game.nro");
+        expect(switchcore::sd_file(sd, "sdmc:/switch/game.nro") == game, "map guest file into SD");
+        expect(switchcore::sd_file(sd, "/switch/./game.nro") == game, "accept path without device");
+        expect(!switchcore::sd_file(sd, "sdmc:/../game.nro"), "reject parent escape");
+        expect(!switchcore::sd_file(sd, "sdmc:/switch/../../game.nro"), "reject nested escape");
+        expect(!switchcore::sd_file(sd, "sdmc:/"), "reject SD root");
         std::unique_ptr<SCSession, decltype(&sc_destroy)> session(sc_create(), sc_destroy);
         expect(sc_load(session.get(), SC_SWITCH_1, argv[1], argv[2]), "load Rally");
         expect(sc_step(session.get(), 1024).instructions == 1024, "execute instruction slice");

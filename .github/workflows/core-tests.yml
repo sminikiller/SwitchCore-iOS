@@ -28,7 +28,7 @@ jobs:
       - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build --config Release --parallel 4
       - run: ctest --test-dir build -C Release --output-on-failure --output-junit report.xml
-      - name: Independent homebrew first frame
+      - name: Independent homebrew menu launches Rally
         shell: bash
         run: |
           probe=build/switchcore-probe
