@@ -24,7 +24,7 @@ Con un generatore a configurazione singola usare `-DCMAKE_BUILD_TYPE=Release` e 
 | Rally | NRO compilata con libnx. Il guest presenta un campo 320 × 180 attraverso VI. Premere A e rilasciarlo deve cambiare e ripristinare il pixel di fondo. Il test intercetta campioni PCM non nulli da audout. Il tasto + deve salvare il record nella SD virtuale del titolo e terminare il processo. |
 | Rally prolungato | Almeno 6.000 frame con lo stesso processo, seguito da uscita tramite HID. Il probe gira senza limitatore di velocità. |
 | nx-hbmenu 3.6.1 | Download dalla release Switchbrew con verifica SHA-256. Almeno un framebuffer 1280 × 720 con contenuto non uniforme. |
-| Test iOS | Xcode crea il binario iphoneos arm64. XCTest avvia il programma di triangoli e controlla i draw accelerati e i pixel quando è disponibile Metal. XCUITest avvia Rally dalla libreria, attende un frame, verifica pausa, ripresa e uscita. |
+| Test iOS | Xcode crea il binario iphoneos arm64. XCTest avvia il programma di triangoli e controlla i draw accelerati e i pixel quando è disponibile Metal. Sul simulatore MoltenVK lega i descrittori senza argument buffer Metal, perché sulle macchine virtuali CI il servizio SimMetalHost termina mentre li scrive. Il workflow esporta i crash report del test. XCUITest avvia Rally dalla libreria, attende un frame, verifica pausa, ripresa e uscita. |
 
 ## iOS
 

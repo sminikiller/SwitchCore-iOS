@@ -5,6 +5,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#ifdef SWITCHCORE_MOLTENVK
+#include <TargetConditionals.h>
+#endif
 
 namespace NeXo2::GPU::Vulkan {
 
@@ -105,6 +108,22 @@ bool Device::Init(bool validation) {
         extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
         ici.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
     }
+#if TARGET_OS_SIMULATOR
+    // The Simulator forwards Metal calls to SimMetalHost. On paravirtualized host GPUs, such as
+    // CI virtual machines, MTLArgumentEncoder writes abort the host and then the app inside
+    // vkAllocateDescriptorSets. Simulator builds bind descriptors directly; devices keep
+    // MoltenVK's default argument buffers.
+    static const VkBool32 argument_buffers = VK_FALSE;
+    const VkLayerSettingEXT setting{"MoltenVK", "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS",
+                                    VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &argument_buffers};
+    VkLayerSettingsCreateInfoEXT settings{VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT};
+    settings.settingCount = 1;
+    settings.pSettings = &setting;
+    if (!HasInstanceExtension(VK_EXT_LAYER_SETTINGS_EXTENSION_NAME))
+        return Fail("MoltenVK non espone VK_EXT_layer_settings sul simulatore");
+    extensions.push_back(VK_EXT_LAYER_SETTINGS_EXTENSION_NAME);
+    ici.pNext = &settings;
+#endif
 #endif
     ici.pApplicationInfo = &app;
     ici.enabledLayerCount = u32(layers.size());
