@@ -1576,18 +1576,11 @@ bool VulkanRasterizer::Draw(const u32* regs, const ConstbufTable& cbs, const Dra
     }
 
     // --- Espacio en el buffer de subida y descriptores (todo o nada: puede ejecutar lo pendiente) ---
-#ifdef SWITCHCORE_MOLTENVK
-    // MoltenVK advertises 16-byte storage offsets but binds index and storage ranges as Metal buffer
-    // offsets, whose alignment it reports as minUniformBufferOffsetAlignment (256 in the iOS Simulator).
-    const VkDeviceSize balign = std::max<VkDeviceSize>(lim.minUniformBufferOffsetAlignment, 16);
-#else
-    const VkDeviceSize balign = 16;
-#endif
-    const VkDeviceSize salign = std::max<VkDeviceSize>(lim.minStorageBufferOffsetAlignment, balign);
+    const VkDeviceSize salign = std::max<VkDeviceSize>(lim.minStorageBufferOffsetAlignment, 16);
     VkDeviceSize need = vdata.size() * 4 + 256 + salign * 40;
     for (const auto& c : cbdata) need += c.size();
     if (vsh) {
-        need += vin.records.size() * 4 + idata.size() * 4 + sizeof(vsinfo) + balign;
+        need += vin.records.size() * 4 + idata.size() * 4 + sizeof(vsinfo) + 16;
         for (const auto& c : vcbdata) need += c.size();
     }
     if (m_setsLeft == 0 || AlignUp(m_uploadOffset, 256) + need > m_upload.size) Submit();
@@ -1603,7 +1596,7 @@ bool VulkanRasterizer::Draw(const u32* regs, const ConstbufTable& cbs, const Dra
     --m_setsLeft;
     Alloc va{0, nullptr};
     if (vsh) {
-        va = Allocate(idata.size() * 4, balign);
+        va = Allocate(idata.size() * 4, 16);
         std::memcpy(va.ptr, idata.data(), idata.size() * 4);
     } else {
         va = Allocate(vdata.size() * 4, 16);
