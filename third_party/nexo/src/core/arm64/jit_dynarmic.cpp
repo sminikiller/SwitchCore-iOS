@@ -75,9 +75,13 @@ constexpr bool kArm64Host = false;
 
 // SwitchCore: IR operations whose ARM64 emitter is an ASSERT_FALSE("Unimplemented") stub at the
 // pinned dynarmic commit (backend/arm64/emit_arm64_*.cpp). Recheck when updating dynarmic.
+// FPVectorRoundInt16 (FRINT* on half-precision vectors) is emitted but wrong: its software fallback
+// restores the result register after the call (ABI_CALLER_SAVE & ~(1 << Q index) clears a GPR bit),
+// which the CPU fuzz test reports as incorrect results.
 bool Arm64CannotEmit(Dynarmic::IR::Opcode op) {
     using O = Dynarmic::IR::Opcode;
     switch (op) {
+    case O::FPVectorRoundInt16:
     case O::SM4AccessSubstitutionBox:
     case O::FPAbs16:
     case O::FPMulAdd16:
