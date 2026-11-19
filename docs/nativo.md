@@ -56,4 +56,11 @@ Su iPhone i valori vanno misurati di nuovo. Se x18 e TPIDR_EL0 si comportano all
 | M3 GPU | Vertex shader tradotto funzionante, cache e compilazione asincrona degli shader, texture ASTC native su A16. |
 | M4 Titoli dai propri dump | Caricamento di NSP e XCI con le chiavi della propria console, esposto nell'app. Livello registrato per ciascun titolo sulla [scala di compatibilità](test.md#scala-di-compatibilità). |
 
+## Stato al 19 novembre 2026
+
+- **M0.** Le sonde sul runner macOS sono completate. Il pannello per iPhone è in sviluppo su un branch separato.
+- **M1.** Il ricompilatore Dynarmic è in sviluppo su un branch separato. Need for Madness gira a circa 4,7 FPS con l'interprete e il rasterizzatore software su un Ryzen 7 5800X ([prove dei giochi di corse](test.md#giochi-di-corse-homebrew)) e serve da misura di confronto.
+- **M3.** Il vertex shader tradotto disegna dal commit `0ab12f5`. I suoi binding ripetevano i numeri delle texture (38–47): MoltenVK assegnava i buffer `VS_INFO` e `VS_ATTR` alle texture del fragment shader e il vertex stage restava senza dati. Il difetto riguardava anche i dispositivi reali. Il test iOS ora richiede i pixel corretti anche con il vertex shader sulla GPU.
+- **M4.** L'app importa applicazioni Switch 1 estratte (`exefs/main`, moduli, RomFS). NSP e XCI restano interni al core.
+
 File di gioco, chiavi e firmware provengono solo dalla console dell'utente e non entrano nel repository né nella CI.
