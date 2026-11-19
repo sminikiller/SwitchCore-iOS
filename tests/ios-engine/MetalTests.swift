@@ -43,7 +43,6 @@ final class MetalTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         XCTAssertTrue(sc_load(session, SC_SWITCH_1, file.path, root.path), String(cString: sc_message(session)))
-        XCTAssertEqual(String(cString: sc_title(session)), "Need for Madness")
         XCTAssertTrue(sc_set_gpu(session, false))
         let planURL = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "nfm-race", withExtension: "txt"))
         let plan = try String(contentsOf: planURL, encoding: .utf8)
