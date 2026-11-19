@@ -11,9 +11,16 @@
 // Each line holds a guest frame count, a decimal HID button mask and signed left-stick X.
 // Captures the actual guest image at each checkpoint. No polling of host input or host display.
 int main(int argc, char **argv) {
-    if (argc != 5) {
-        std::cerr << "switchcore-replay PROGRAM TITLE_DIR PLAN.txt CAPTURE_DIR\n";
+    if (argc != 5 && argc != 6) {
+        std::cerr
+            << "switchcore-replay PROGRAM TITLE_DIR PLAN.txt CAPTURE_DIR [CHECKPOINT_TIMEOUT_SECONDS]\n";
         return 2;
+    }
+    int timeout = 120;
+    if (argc == 6) {
+        std::istringstream argument(argv[5]);
+        if (!(argument >> timeout) || !argument.eof() || timeout <= 0 || timeout > 3600)
+            return 2;
     }
     std::ifstream plan(argv[3]);
     if (!plan)
@@ -42,11 +49,12 @@ int main(int argc, char **argv) {
         do {
             stats = sc_step(session.get(), 100000);
         } while (stats.state == SC_RUNNING && stats.frames < checkpoint &&
-                 std::chrono::steady_clock::now() - start < std::chrono::seconds(120));
+                 std::chrono::steady_clock::now() - start < std::chrono::seconds(timeout));
         const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
         std::cout << "target=" << checkpoint << " frames=" << stats.frames << " elapsed_s=" << elapsed
-                  << " instructions=" << stats.instructions << " pc=" << std::hex << stats.pc << std::dec
-                  << " status=" << sc_message(session.get()) << std::endl;
+                  << " instructions=" << stats.instructions << " guest_bytes=" << stats.guest_bytes
+                  << " pc=" << std::hex << stats.pc << std::dec << " status=" << sc_message(session.get())
+                  << std::endl;
         if (stats.frames > captured) {
             std::ofstream ppm(output / ("frame-" + std::to_string(stats.frames) + ".ppm"), std::ios::binary);
             auto save = [](void *ctx, const uint32_t *pixels, uint32_t w, uint32_t h) {
@@ -70,6 +78,8 @@ int main(int argc, char **argv) {
                 return 1;
         }
         if (stats.state == SC_FAULT || stats.frames < checkpoint) {
+            if (stats.state == SC_RUNNING)
+                std::cerr << "Checkpoint timeout after " << timeout << " s\n";
             std::cerr << sc_log(session.get()) << '\n';
             return 1;
         }
