@@ -6,7 +6,7 @@ SwitchCore esegue homebrew Nintendo Switch 1 in locale su un interprete ARM64. L
 
 Il core C++20 integra CPU scalare e NEON, RAM paginata, kernel e IPC Horizon, servizi HID/VI/FS/audio e comandi GPU Maxwell. Su iOS la pipeline accelerata traduce gli shader supportati in SPIR-V e usa MoltenVK per eseguirli in Metal. I draw non gestiti possono tornare al rasterizzatore software. La presentazione riceve i pixel del guest. L'app supporta touch, GameController, PCM stereo, limite FPS e sospensione sotto pressione di memoria o temperatura.
 
-Il frontend accetta NRO. Un menu homebrew come nx-hbmenu può avviare le NRO presenti nella SD virtuale del titolo. Alla chiusura della NRO avviata si torna al menu. Il core upstream comprende codice per contenitori e applicazioni che richiede convalida separata prima dell'esposizione nell'app. La compatibilità con titoli commerciali, l'esecuzione Switch 2 e le prestazioni su iPhone 14 Pro restano da verificare. Il backend di ricerca Switch 2 restituisce un errore esplicito all'avvio.
+Il frontend accetta NRO. Un menu homebrew come nx-hbmenu può avviare le NRO presenti nella SD virtuale del titolo. Alla chiusura della NRO avviata si torna al menu. Il core upstream comprende codice per contenitori e applicazioni che richiede convalida separata prima dell'esposizione nell'app. La compatibilità con titoli commerciali, l'esecuzione Switch 2 e le prestazioni su iPhone 14 Pro restano da verificare. Il backend di ricerca Switch 2 restituisce un errore esplicito all'avvio. [Piano per l'esecuzione nativa su iPhone](docs/nativo.md)
 
 ## Compilazione e prove
 
