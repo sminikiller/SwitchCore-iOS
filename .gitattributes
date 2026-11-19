@@ -1,0 +1,6 @@
+* text=auto
+*.bin -text
+*.nro -text
+*.jpg -text
+*.png -text
+
