@@ -1,4 +1,5 @@
 #include "display.hpp"
+#include <bit>
 #include <cstring>
 
 namespace NeXo2::HLE {
@@ -90,6 +91,28 @@ bool Display::PresentAt(Core::Memory& memory, const GraphicBufferInfo& buf, u64 
     if (bytes > 64ull * 1024 * 1024 || nvmap_address >= Core::Memory::ADDRESS_SPACE ||
         buf.offset > Core::Memory::ADDRESS_SPACE - nvmap_address ||
         bytes > Core::Memory::ADDRESS_SPACE - nvmap_address - buf.offset) return false;
+    if (std::endian::native == std::endian::little && buf.format == PIXEL_FORMAT_RGBA_8888 &&
+        (buf.layout == LAYOUT_PITCH || buf.pitch == buf.width * 4)) {
+        const u64 address = nvmap_address + buf.offset;
+        std::lock_guard lock(m_frameMutex);
+        m_frame.rgba.resize(size_t(buf.width) * buf.height);
+        if (buf.layout == LAYOUT_BLOCK_LINEAR) {
+            m_tiled.resize(static_cast<size_t>(bytes));
+            memory.ReadBytes(address, m_tiled.data(), m_tiled.size());
+            DeswizzleBlockLinear(m_tiled.data(), reinterpret_cast<u8*>(m_frame.rgba.data()),
+                                 buf.pitch, buf.height, buf.block_height_log2);
+        } else if (buf.pitch == buf.width * 4) {
+            memory.ReadBytes(address, m_frame.rgba.data(), static_cast<size_t>(bytes));
+        } else {
+            for (u32 y = 0; y < buf.height; ++y)
+                memory.ReadBytes(address + size_t(y) * buf.pitch, m_frame.rgba.data() + size_t(y) * buf.width,
+                                 size_t(buf.width) * 4);
+        }
+        m_frame.width = buf.width;
+        m_frame.height = buf.height;
+        ++m_frame.count;
+        return true;
+    }
     std::vector<u8> raw(static_cast<size_t>(bytes));
     memory.ReadBytes(nvmap_address + buf.offset, raw.data(), raw.size());
 

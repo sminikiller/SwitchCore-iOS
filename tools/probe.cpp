@@ -26,7 +26,8 @@ void receive(void *context, const uint32_t *rgba, uint32_t width, uint32_t heigh
 }
 int main(int argc, char **argv) {
     if (argc < 3 || argc > 5) {
-        std::cerr << "switchcore-probe FILE.nro TITLE_DIR [rally|soak|frame|exit|launcher] [capture.ppm]\n";
+        std::cerr << "switchcore-probe NRO_OR_EXTRACTED_FOLDER TITLE_DIR [rally|soak|frame|exit|launcher] "
+                     "[capture.ppm]\n";
         return 2;
     }
     const std::string mode = argc > 3 ? argv[3] : "frame";

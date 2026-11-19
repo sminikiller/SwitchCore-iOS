@@ -91,13 +91,6 @@ bool System::LoadNro(const std::vector<u8>& data, const std::string& name, const
 namespace {
 std::filesystem::path Utf8Path(const std::string& s) { return std::filesystem::path(std::u8string(s.begin(), s.end())); }
 
-bool ReadWholeFile(const std::filesystem::path& p, std::vector<u8>& out) {
-    std::ifstream f(p, std::ios::binary);
-    if (!f) return false;
-    out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-    return true;
-}
-
 // Carpeta del ExeFS de un juego extraido ('path' = la carpeta del juego, la del ExeFS o un
 // archivo de dentro). Vacia si no hay un "main".
 std::filesystem::path FindExefs(const std::string& path) {
@@ -179,13 +172,16 @@ bool System::LoadGame(const std::string& path) {
         if (!romfs)
             for (const fs::path& r : {dir / "romfs", dir / "RomFS"})
                 if (fs::is_directory(r, ec)) { romfs = Loader::BuildRomfsFromDirectory(r); break; }
-        std::vector<u8> d;
-        if (ReadWholeFile(dir / "control.nacp", d)) nacp = std::move(d);
+        if (auto control = Loader::OpenHostFile(dir / "control.nacp")) {
+            if (control->Size() > 4 * 1024 * 1024) return fail("control.nacp troppo grande");
+            nacp = control->ReadAll();
+        }
         fallback_name = dir.filename().string();
     }
 
     Loader::NpdmInfo npdm;
     if (auto it = exefs.find("main.npdm"); it != exefs.end() && it->second) {
+        if (it->second->Size() > 4 * 1024 * 1024) return fail("main.npdm troppo grande");
         auto r = Loader::ParseNpdm(it->second->ReadAll());
         if (!r.ok) return fail(r.error);
         npdm = r.info;
@@ -193,6 +189,7 @@ bool System::LoadGame(const std::string& path) {
         Logger::Log(Logger::Level::Warning, "[Loader] No hay main.npdm: se usan valores por defecto");
     }
     if (!npdm.program_id) npdm.program_id = package_program_id;
+    if ((npdm.program_id >> 48) == 0x0400) return fail("Titolo Switch 2 incompatibile con il profilo Switch 1");
 
     ResetMachine();
     // Los modulos van seguidos en memoria, en este orden; se empieza por el primero
@@ -204,7 +201,12 @@ bool System::LoadGame(const std::string& path) {
     for (const auto& name : names) {
         auto it = exefs.find(name);
         if (it == exefs.end() || !it->second) continue;
-        auto r = Loader::LoadNso(it->second->ReadAll(), m_memory, base, name);
+        constexpr u64 budget = 512ull << 20;
+        const u64 remaining = budget - (base - HLE::Layout::CODE_BASE);
+        if (it->second->Size() > budget) return fail("NSO su disco oltre 512 MiB: " + name);
+        auto data = it->second->ReadAll();
+        if (data.size() != it->second->Size()) return fail("Lettura NSO incompleta: " + name);
+        auto r = Loader::LoadNso(data, m_memory, base, name, remaining);
         if (!r.ok) return fail("NSO no valido: " + r.error);
         if (!entry) entry = base;
         base += r.image_size;

@@ -55,6 +55,7 @@ targets:
     platform: iOS
     sources:
       - tests/ios-engine
+      - apps/ios/Library/ExtractedGame.swift
       - path: third_party/nexo/tests/generated/triangle.nro
         buildPhase: resources
       - path: build-fixtures/hbmenu.nro

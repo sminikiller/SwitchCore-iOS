@@ -9,6 +9,7 @@ struct Title: Identifiable, Codable, Hashable {
     let file: URL
     var favorite = false
     var lastPlayed: Date?
+    var extracted: Bool?
 }
 
 enum LibraryError: LocalizedError {
@@ -31,8 +32,9 @@ final class Library: ObservableObject {
             if fm.fileExists(atPath: catalog.path) {
                 titles = try JSONDecoder().decode([Title].self, from: Data(contentsOf: catalog)).map { item in
                     // iOS may relocate the Application Support container between launches.
-                    Title(id: item.id, name: item.name, author: item.author, file: Self.file(item.id),
-                          favorite: item.favorite, lastPlayed: item.lastPlayed)
+                    Title(id: item.id, name: item.name, author: item.author,
+                          file: item.extracted == true ? Self.dir(item.id).appendingPathComponent("application") : Self.file(item.id),
+                          favorite: item.favorite, lastPlayed: item.lastPlayed, extracted: item.extracted)
                 }
             }
             if let demo = Bundle.main.url(forResource: "rally", withExtension: "nro"), !titles.contains(where: { $0.name == "Rally" }) {
@@ -42,6 +44,18 @@ final class Library: ObservableObject {
     }
     static func dir(_ id: String) -> URL { root.appendingPathComponent(id, isDirectory: true) }
     static func file(_ id: String) -> URL { dir(id).appendingPathComponent("program.nro") }
+    @MainActor func importFolder(_ url: URL) async throws {
+        let staged = try await Task.detached(priority: .userInitiated) {
+            try ExtractedGame.prepare(url, in: Self.root)
+        }.value
+        defer { try? fm.removeItem(at: staged.staging) }
+        if titles.contains(where: { $0.id == staged.id }) { return }
+        let dest = Self.dir(staged.id)
+        if !fm.fileExists(atPath: dest.path) { try fm.moveItem(at: staged.staging, to: dest) }
+        let title = Title(id: staged.id, name: staged.name, author: "Applicazione Switch · ExeFS",
+                          file: dest.appendingPathComponent("application"), extracted: true)
+        try persist(titles + [title])
+    }
     func importFile(_ url: URL) throws {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }

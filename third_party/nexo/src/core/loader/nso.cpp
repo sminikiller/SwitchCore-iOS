@@ -51,7 +51,8 @@ bool Lz4DecompressBlock(const u8* src, size_t src_size, u8* dst, size_t dst_size
     return op == dst_size;
 }
 
-NsoLoadResult LoadNso(const std::vector<u8>& file, Core::Memory& memory, u64 base, const std::string& name) {
+NsoLoadResult LoadNso(const std::vector<u8>& file, Core::Memory& memory, u64 base, const std::string& name,
+                      u64 remaining_image_bytes) {
     NsoLoadResult result;
     auto fail = [&](const std::string& why) { result.error = name + ": " + why; return result; };
 
@@ -63,32 +64,32 @@ NsoLoadResult LoadNso(const std::vector<u8>& file, Core::Memory& memory, u64 bas
 
     const NsoSegment segs[3] = {h.text, h.ro, h.data};
     const u32 file_sizes[3] = {h.text_file_size, h.ro_file_size, h.data_file_size};
+    if (!h.text.size || h.text.memory_offset != 0 || h.version != 0 ||
+        h.ro.memory_offset < u64(h.text.memory_offset) + h.text.size ||
+        h.data.memory_offset < u64(h.ro.memory_offset) + h.ro.size)
+        return fail("invalid NSO entry point, version or segment layout");
+    const u64 data_end = u64(h.data.memory_offset) + h.data.size;
+    const u64 image_end = AlignUp(data_end + h.bss_size, PAGE);
+    if (image_end > remaining_image_bytes || base >= Core::Memory::ADDRESS_SPACE ||
+        image_end > Core::Memory::ADDRESS_SPACE - base)
+        return fail("NSO image exceeds available address space or loader budget");
     for (int i = 0; i < 3; ++i) {
         const NsoSegment& s = segs[i];
         const bool compressed = (h.flags >> i) & 1;
         const u64 stored = compressed ? file_sizes[i] : s.size;
         if (u64(s.file_offset) + stored > file.size()) return fail("un segmento se sale del archivo (esta cortado?)");
         if (s.memory_offset % PAGE) return fail("segmento no alineado a 4 KB en memoria");
-        std::vector<u8> out(s.size);
+        if (!s.size) continue;
         if (compressed) {
+            std::vector<u8> out(s.size);
             if (!Lz4DecompressBlock(file.data() + s.file_offset, stored, out.data(), out.size()))
                 return fail("datos LZ4 no validos");
-        } else if (s.size) {
-            std::memcpy(out.data(), file.data() + s.file_offset, s.size);
-        }
-        memory.WriteBytes(base + s.memory_offset, out.data(), out.size());
+            memory.WriteBytes(base + s.memory_offset, out.data(), out.size());
+        } else
+            memory.WriteBytes(base + s.memory_offset, file.data() + s.file_offset, s.size);
     }
-    if (h.ro.memory_offset < u64(h.text.memory_offset) + h.text.size ||
-        h.data.memory_offset < u64(h.ro.memory_offset) + h.ro.size)
-        return fail("segmentos solapados o desordenados");
-
-    // .bss: justo despues de .data, a cero
-    const u64 data_end = u64(h.data.memory_offset) + h.data.size;
-    const u64 image_end = AlignUp(data_end + h.bss_size, PAGE);
-    if (image_end > data_end) {
-        const std::vector<u8> zeros(image_end - data_end, 0);
-        memory.WriteBytes(base + data_end, zeros.data(), zeros.size());
-    }
+    // Modules are loaded into fresh, disjoint address ranges. Untouched guest pages
+    // already read as zero, including the tail of the final data page and all of BSS.
 
     memory.MapRegion(base + h.text.memory_offset, AlignUp(h.text.size, PAGE), MemoryState::Code,
                      MemoryPermission::ReadExecute, name + " .text");

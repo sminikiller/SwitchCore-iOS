@@ -12,6 +12,8 @@ struct LibraryView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var diagnostics: Diagnostics
     @State private var importing = false
+    @State private var folder = false
+    @State private var copying = false
     @State private var credits = false
     @State private var query = ""
     @State private var filter = 0
@@ -56,7 +58,7 @@ struct LibraryView: View {
                     }
                 }
                 if visible.isEmpty {
-                    ContentUnavailableView("Nessun titolo", systemImage: "square.stack", description: Text("Importa una homebrew .nro o cambia filtro."))
+                    ContentUnavailableView("Nessun titolo", systemImage: "square.stack", description: Text("Importa una homebrew NRO o una cartella di gioco estratta."))
                 }
             }.navigationTitle("Libreria")
             .searchable(text: $query, prompt: "Cerca un titolo")
@@ -64,7 +66,15 @@ struct LibraryView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Informazioni", systemImage: "info.circle") { credits = true }
                 }
-                ToolbarItem(placement: .topBarTrailing) { Button("Importa", systemImage: "plus") { importing = true } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if copying { ProgressView().accessibilityLabel("Importazione in corso") }
+                    else {
+                        Menu {
+                            Button("Homebrew NRO") { folder = false; importing = true }
+                            Button("Cartella di gioco estratta") { folder = true; importing = true }
+                        } label: { Label("Importa", systemImage: "plus") }
+                    }
+                }
             }
             .sheet(isPresented: $credits) {
                 NavigationStack {
@@ -90,9 +100,15 @@ struct LibraryView: View {
                     }.navigationTitle("Informazioni").toolbar { Button("Fine") { credits = false } }
                 }
             }
-            .fileImporter(isPresented: $importing, allowedContentTypes: [UTType(filenameExtension: "nro") ?? .data]) { result in
-                do { try library.importFile(result.get()) }
-                catch { library.error = error.localizedDescription }
+            .fileImporter(isPresented: $importing, allowedContentTypes: folder ? [.folder] : [UTType(filenameExtension: "nro") ?? .data]) { result in
+                Task { @MainActor in
+                    defer { copying = false }
+                    do {
+                        let url = try result.get()
+                        if folder { copying = true; try await library.importFolder(url) }
+                        else { try library.importFile(url) }
+                    } catch { library.error = error.localizedDescription }
+                }
             }
             .alert("Libreria", isPresented: Binding(get: { library.error != nil }, set: { if !$0 { library.error = nil } })) {
                 Button("Chiudi") { library.error = nil }

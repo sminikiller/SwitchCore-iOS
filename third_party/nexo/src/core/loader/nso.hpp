@@ -52,6 +52,7 @@ struct NsoLoadResult {
 bool Lz4DecompressBlock(const u8* src, size_t src_size, u8* dst, size_t dst_size);
 
 // Comprueba el NSO, lo descomprime en 'base' y marca sus zonas ('name' para el mapa).
-NsoLoadResult LoadNso(const std::vector<u8>& file, Core::Memory& memory, u64 base, const std::string& name);
+NsoLoadResult LoadNso(const std::vector<u8>& file, Core::Memory& memory, u64 base, const std::string& name,
+                      u64 remaining_image_bytes);
 
 } // namespace NeXo2::Loader

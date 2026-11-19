@@ -48,6 +48,8 @@ void start(SCSession &s, const fs::path &path, const std::string &argv) {
 // Homebrew loader contract: a menu stores the chosen NRO with envSetNextLoad and exits. A program it
 // launched returns to the menu when it ends without choosing another one.
 bool resume(SCSession &s) {
+    if (s.menu.empty())
+        return false;
     auto &kernel = s.system->GetKernel();
     const std::string next = kernel.GetNextLoadPath();
     if (next.empty() && !s.launched)
@@ -87,8 +89,15 @@ bool sc_load(SCSession *s, SCBackend backend, const char *file, const char *dire
         fs::create_directories(root);
         s->system = std::make_unique<System>();
         s->system->GetKernel().SetSdmcRoot(root);
-        s->menu = fs::u8path(file);
-        start(*s, s->menu, "");
+        const auto path = fs::u8path(file);
+        if (fs::is_directory(path)) {
+            if (!s->system->LoadGame(file))
+                throw std::runtime_error(s->system->GetLastError());
+            s->title = s->system->GetProgramName();
+        } else {
+            s->menu = path;
+            start(*s, path, "");
+        }
         s->system->GetMemory().EnableGuestProtection();
         s->stats.state = SC_RUNNING;
         return true;

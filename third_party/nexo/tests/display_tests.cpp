@@ -72,6 +72,36 @@ TEST(Display_PresentRgb565Pitch) {
     CHECK(!display.Present(mem, info));
 }
 
+TEST(Display_RgbaScanoutMatchesPixels) {
+    Core::Memory memory;
+    const u64 address = 0x80000000;
+    memory.MapRegion(address, 0x4000, Core::MemoryState::Normal, Core::MemoryPermission::ReadWrite, "fb");
+    HLE::Display display;
+    u64 count = 0;
+    for (u32 layout : {1u, 3u}) {
+        for (u32 width : {29u, 32u}) {
+            GraphicBufferInfo info;
+            info.width = width; info.height = 27; info.pitch = 128; info.format = 1;
+            info.offset = 4013; info.layout = layout; info.block_height_log2 = 2;
+            std::vector<u32> expected(width * info.height);
+            std::vector<u8> raw(info.pitch * 32, 0xFF);
+            for (u32 y = 0; y < info.height; ++y) {
+                for (u32 x = 0; x < width; ++x) {
+                    const u32 value = (y << 26) ^ (x * 0x70a0be1u) ^ static_cast<u32>(count);
+                    expected[y * width + x] = value;
+                    const size_t at = layout == 1 ? y * info.pitch + x * 4
+                        : BlockLinearOffset(x * 4, y, info.pitch, info.block_height_log2);
+                    std::memcpy(raw.data() + at, &value, 4);
+                }
+            }
+            memory.WriteBytes(address + info.offset, raw.data(), raw.size());
+            CHECK(display.PresentAt(memory, info, address));
+            CHECK(display.Frame().rgba == expected);
+            CHECK_EQ(display.Frame().count, ++count);
+        }
+    }
+}
+
 TEST(Display_ParseGraphicBuffer) {
     // GraphicBuffer real que manda libnx (consola 1280x720 RGB565 en block linear)
     const u32 words[] = {

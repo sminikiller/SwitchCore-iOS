@@ -16,27 +16,40 @@ struct Screen: UIViewRepresentable {
         var frame: GuestFrame?
         var queue: MTLCommandQueue?
         var pipeline: MTLRenderPipelineState?
-        var texture: MTLTexture?
-        var uploaded: UInt64 = 0
+        // Pooled textures stay immutable while the GPU samples them. MTKView draws on demand
+        // on the main thread; the completion callback returns the slot on the same thread.
+        private struct Slot {
+            var texture: MTLTexture?
+            var serial: UInt64?
+            var busy = false
+        }
+        private var slots = Array(repeating: Slot(), count: 3)
+        private var waiting = false
 
         func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { view.setNeedsDisplay() }
         func draw(in view: MTKView) {
-            guard let f = frame, let device = view.device, let queue, let pipeline,
+            guard let f = frame, let device = view.device, let queue, let pipeline else { return }
+            guard let index = slots.firstIndex(where: { !$0.busy && $0.serial == f.serial })
+                    ?? slots.firstIndex(where: { !$0.busy }) else {
+                waiting = true
+                return
+            }
+            guard
                   let drawable = view.currentDrawable, let descriptor = view.currentRenderPassDescriptor,
                   let command = queue.makeCommandBuffer() else { return }
-            // Previously submitted commands retain their own immutable guest texture.
-            if uploaded != f.serial {
+            if slots[index].texture?.width != f.width || slots[index].texture?.height != f.height {
                 let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: f.width, height: f.height, mipmapped: false)
                 desc.usage = .shaderRead
-                texture = device.makeTexture(descriptor: desc)
+                slots[index].texture = device.makeTexture(descriptor: desc)
+                slots[index].serial = nil
             }
-            guard let texture else { return }
-            if uploaded != f.serial {
+            guard let texture = slots[index].texture else { return }
+            if slots[index].serial != f.serial {
                 f.data.withUnsafeBytes { bytes in
                     texture.replace(region: MTLRegionMake2D(0, 0, f.width, f.height), mipmapLevel: 0,
                                     withBytes: bytes.baseAddress!, bytesPerRow: f.width * 4)
                 }
-                uploaded = f.serial
+                slots[index].serial = f.serial
             }
             guard let encoder = command.makeRenderCommandEncoder(descriptor: descriptor) else { return }
             encoder.setRenderPipelineState(pipeline)
@@ -44,9 +57,16 @@ struct Screen: UIViewRepresentable {
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             encoder.endEncoding()
             command.present(drawable)
-            command.addCompletedHandler { [weak view] buffer in
+            slots[index].busy = true
+            waiting = false
+            command.addCompletedHandler { [weak self, weak view] buffer in
                 let message = buffer.status == .completed ? "Frame Metal" : "Errore Metal"
-                DispatchQueue.main.async { view?.accessibilityValue = message }
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.slots[index].busy = false
+                    if self.waiting { view?.setNeedsDisplay() }
+                    view?.accessibilityValue = message
+                }
             }
             command.commit()
         }

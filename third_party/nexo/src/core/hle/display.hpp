@@ -122,12 +122,18 @@ public:
         f.rgba = std::move(out);
     }
 
-    void Reset() { m_nvmap.Clear(); std::lock_guard lock(m_frameMutex); m_frame = DisplayFrame{}; }
+    void Reset() {
+        m_nvmap.Clear();
+        std::lock_guard lock(m_frameMutex);
+        m_frame = DisplayFrame{};
+        std::vector<u8>().swap(m_tiled);
+    }
 
 private:
     NvMapTable   m_nvmap;
     mutable std::mutex m_frameMutex;
     DisplayFrame m_frame;
+    std::vector<u8> m_tiled; // protected by m_frameMutex, reused for successive tiled RGBA frames
 };
 
 // Convierte una imagen "block linear" (GOBs de 64x8 bytes en bloques de 2^n GOBs de alto)

@@ -311,6 +311,7 @@ VFilePtr BuildRomfsFromDirectory(const fs::path& root) {
         for (const auto& e : fs::directory_iterator(dirs[d].host, ec)) entries.push_back(e);
         std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) { return a.path().filename() < b.path().filename(); });
         for (const auto& e : entries) {
+            if (e.is_symlink(ec)) continue;
             const auto utf8 = e.path().filename().u8string();
             std::string name(utf8.begin(), utf8.end());
             if (e.is_directory(ec)) {

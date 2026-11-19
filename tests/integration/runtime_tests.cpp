@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#include "core/loader/nso.hpp"
 #include "core/memory/memory.hpp"
 #include "core/runtime/SdPath.hpp"
 #include "core/runtime/SwitchCore.h"
 #include "video_core/gpu.hpp"
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 
@@ -53,6 +55,26 @@ int main(int argc, char **argv) {
         expect(sc_step(session.get(), 20).state == SC_FAULT, "no stale running process");
         expect(!sc_load(session.get(), SC_SWITCH_1, "", argv[2]), "missing file rejected");
         expect(sc_load(session.get(), SC_SWITCH_1, argv[1], argv[2]), "recover following failure");
+        const auto folder = std::filesystem::path(argv[2]) / "application";
+        std::filesystem::create_directories(folder / "exefs");
+        NeXo2::Loader::NsoHeader header{};
+        header.magic = 0x304f534e;
+        header.text = {sizeof(header), 0, 4};
+        header.ro.memory_offset = header.data.memory_offset = 4096;
+        const uint32_t exitProcess = 0xd40000e1;
+        auto writeApplication = [&] {
+            std::ofstream out(folder / "exefs" / "main", std::ios::binary);
+            out.write(reinterpret_cast<const char *>(&header), sizeof(header));
+            out.write(reinterpret_cast<const char *>(&exitProcess), sizeof(exitProcess));
+            expect(out.good(), "write application fixture");
+        };
+        writeApplication();
+        expect(sc_load(session.get(), SC_SWITCH_1, folder.string().c_str(), argv[2]), "boot extracted NSO");
+        expect(sc_step(session.get(), 128).state == SC_EXITED, "NSO executes ExitProcess");
+        header.bss_size = 1u << 30;
+        writeApplication();
+        expect(!sc_load(session.get(), SC_SWITCH_1, folder.string().c_str(), argv[2]),
+               "bound image size before mapping BSS");
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';
         return 1;

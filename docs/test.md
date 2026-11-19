@@ -39,6 +39,17 @@ xcodebuild -scheme SwitchCore -configuration Release -destination 'generic/platf
 
 GitHub Actions conserva l'IPA senza firma, il bundle XCTest e i log. L'installazione su un iPhone fisico richiede la firma con un team Apple autorizzato. Per riprodurre una misura su A16 selezionare il proprio team in Xcode, installare, aprire Rally, premere A, muovere la racchetta con ↑/↓ e chiudere con +. Registrare build, versione iOS, profilo, durata, FPS guest e memoria app. Una misura del simulatore o del probe Windows non vale come misura A16.
 
+## Presentazione RGBA8 a 720p
+
+`scanout-bench` misura `Display::PresentAt` su un framebuffer da 1280 × 720 già presente nella memoria guest. Scarta 10 fotogrammi di riscaldamento e registra i successivi 200 per layout. Su Windows x64, Ryzen 7 5800X, build Release MSVC, confronto con il core del commit `0ab12f5` sulla stessa macchina:
+
+| Layout | Mediana prima | Mediana dopo | 95º percentile prima | 95º percentile dopo |
+| --- | ---: | ---: | ---: | ---: |
+| Lineare | 2,080 ms | 0,062 ms | 2,128 ms | 0,077 ms |
+| Tegra block-linear | 3,616 ms | 0,301 ms | 4,002 ms | 0,316 ms |
+
+I checksum dei pixel coincidono per ciascun layout. La misura riguarda la preparazione del framebuffer sulla CPU del PC. La durata di un frame completo di gioco comprende anche esecuzione ARM64, servizi, draw GPU e presentazione sul dispositivo. Per ripetere la misura usare `build/Release/scanout-bench.exe` dopo la compilazione. Per avviare un'applicazione estratta con il bridge usare `switchcore-probe CARTELLA_GIOCO CARTELLA_SALVATAGGI frame`.
+
 ## Scala di compatibilità
 
 Registrare per ciascun binario il più alto livello osservato con le prove intermedie disponibili. I dieci livelli sono riconoscimento, caricamento, creazione del processo, esecuzione CPU, servizi HLE, primo frame, input, interazione, stabilità prolungata e misura sul dispositivo fisico. nx-hbmenu documenta il livello 8 con input e avvio di un'altra NRO dalla propria SD. L'esito di Rally non si estende ad altri eseguibili.
