@@ -10,20 +10,30 @@ import zipfile
 URL = "https://github.com/switchbrew/nx-hbmenu/releases/download/v3.6.1/nx-hbmenu_v3.6.1.zip"
 DIGEST = "4790c58fdd75c4bcc644fa8135fa11c380cb3ebaf685e400e336031972410ee7"
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("probe", type=pathlib.Path)
-    parser.add_argument("directory", type=pathlib.Path)
-    args = parser.parse_args()
-    args.directory.mkdir(parents=True, exist_ok=True)
+def fetch(directory):
+    directory.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(URL, timeout=60) as response:
         archive = response.read(16 << 20)
     if hashlib.sha256(archive).hexdigest() != DIGEST:
         raise ValueError("Unexpected archive fingerprint")
     with zipfile.ZipFile(io.BytesIO(archive)) as package:
         name, = [item for item in package.namelist() if pathlib.PurePosixPath(item).name == "hbmenu.nro"]
-        nro = args.directory / "hbmenu.nro"
+        nro = directory / "hbmenu.nro"
         nro.write_bytes(package.read(name))
+    return nro
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("probe", type=pathlib.Path, nargs="?")
+    parser.add_argument("directory", type=pathlib.Path, nargs="?")
+    parser.add_argument("--fetch-only", metavar="DIRECTORY", type=pathlib.Path)
+    args = parser.parse_args()
+    if args.fetch_only is not None:
+        fetch(args.fetch_only)
+        return
+    if not args.probe or not args.directory:
+        parser.error("Specify the probe executable and an output directory")
+    nro = fetch(args.directory)
     frame = args.directory / "hbmenu.ppm"
     subprocess.run([args.probe.resolve(), nro, args.directory / "title", "frame", frame], check=True)
     with frame.open("rb") as image:

@@ -32,6 +32,7 @@ Su macOS con Xcode, Metal Toolchain e XcodeGen installati:
 
 ```sh
 bash tools/prepare-metal.sh
+python3 tools/verify-independent.py --fetch-only build-fixtures
 xcodegen generate
 xcodebuild -scheme SwitchCore -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 ```

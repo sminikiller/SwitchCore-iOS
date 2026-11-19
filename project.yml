@@ -57,6 +57,9 @@ targets:
       - tests/ios-engine
       - path: third_party/nexo/tests/generated/triangle.nro
         buildPhase: resources
+      - path: build-fixtures/hbmenu.nro
+        buildPhase: resources
+        optional: true
     dependencies:
       - target: SwitchCore
     settings:

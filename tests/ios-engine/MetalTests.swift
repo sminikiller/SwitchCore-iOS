@@ -2,6 +2,31 @@ import Metal
 import XCTest
 
 final class MetalTests: XCTestCase {
+    func testIndependentHomebrewMenu() throws {
+        let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "hbmenu", withExtension: "nro"),
+                                 "Preparare la fixture con tools/verify-independent.py --fetch-only build-fixtures")
+        let session = try XCTUnwrap(sc_create())
+        defer { sc_destroy(session) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertTrue(sc_load(session, SC_SWITCH_1, file.path, root.path))
+        var stats = sc_step(session, 250000)
+        let deadline = Date().addingTimeInterval(45)
+        while stats.frames == 0 && stats.state == SC_RUNNING && Date() < deadline {
+            sc_pad(session, 0, 0, 0, 0, 0)
+            stats = sc_step(session, 250000)
+        }
+        XCTAssertGreaterThan(stats.frames, 0, String(cString: sc_message(session)))
+        var number: UInt64 = 0
+        XCTAssertTrue(sc_frame(session, 0, { _, pixels, width, height in
+            XCTAssertEqual(width, 1280)
+            XCTAssertEqual(height, 720)
+            guard let pixels else { XCTFail("Framebuffer assente"); return }
+            var colors = Set<UInt32>()
+            for i in stride(from: 0, to: Int(width) * Int(height), by: 13) { colors.insert(pixels[i]) }
+            XCTAssertGreaterThan(colors.count, 16)
+        }, nil, &number))
+    }
     func testGuestMaxwellTriangle() throws {
         guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("Metal assente sul runner.") }
         let session = try XCTUnwrap(sc_create())
