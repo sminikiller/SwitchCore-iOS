@@ -50,14 +50,16 @@ GitHub Actions conserva l'IPA senza firma, il bundle XCTest e i log. L'installaz
 
 I checksum dei pixel coincidono per ciascun layout. La misura riguarda la preparazione del framebuffer sulla CPU del PC. La durata di un frame completo di gioco comprende anche esecuzione ARM64, servizi, draw GPU e presentazione sul dispositivo. Per ripetere la misura usare `build/Release/scanout-bench.exe` dopo la compilazione. Per avviare un'applicazione estratta con il bridge usare `switchcore-probe CARTELLA_GIOCO CARTELLA_SALVATAGGI frame`.
 
-## Scala di compatibilità
-
-### Giochi di corse homebrew
+## Giochi di corse homebrew
 
 Per riprodurre una sequenza utilizzare `switchcore-replay PROGRAMMA CARTELLA_TITOLO PIANO.txt CARTELLA_CATTURE`. Ogni riga del piano contiene il numero di frame guest da attendere, la maschera decimale dei tasti HID e la posizione orizzontale dello stick sinistro. Lo strumento registra istruzioni, tempo host, PC e immagini PPM. I tempi includono il backend software desktop e possono variare con la macchina. Il test termina con errore se il guest si arresta o trascorrono 120 secondi senza raggiungere il checkpoint.
 
 - **Need for Madness v1.2.3** distribuisce una NRO con i dati incorporati. Sul core Windows, il piano in `tests/integration/nfm-race.txt` parte da una SD vuota, invia A ai menu, seleziona auto e pista, poi aziona ZR e lo stick. L'esecuzione ha mostrato la griglia di partenza in 1280 × 720. Nell'app si può importare la NRO da File. Il gioco resta una fixture scaricata separatamente. [Release del port](https://github.com/HopeAero/nfm-switch-port/releases/tag/v1.2.3)
 - **SuperTuxKart 1.5** distribuisce `switch/stk.nro` e `stk-data/` in un unico ZIP. Per l'app, estrarre lo ZIP in File, importare `stk.nro` e scegliere **Aggiungi cartella alla SD** nelle opzioni del titolo per copiare `stk-data`. Per il probe desktop estrarre lo ZIP nella sottocartella `sdmc` del titolo e avviare la NRO al suo interno. Su Windows il guest ha letto modelli e shader, visualizzato il caricamento e risposto ad A sulla prima schermata di configurazione. [Distribuzione ufficiale](https://supertuxkart.net/Download)
+
+Sul Ryzen 7 5800X con interprete e rasterizzatore software, Need for Madness percorre il rettilineo e sterza. Negli ultimi 210 frame del piano (1188–1398), due esecuzioni consecutive con SD vuota hanno impiegato 42,73 s con il vecchio scanout e 45,11 s con quello nuovo, pari a 4,91 e 4,66 FPS. Il confronto usa lo stesso eseguibile di test ricompilato con le due versioni di `display.cpp`. Le quattro catture ai checkpoint coincidono byte per byte. Una singola coppia di prove non stabilisce una variazione stabile delle prestazioni complessive. Per riprodurre il percorso attivare la modalità software nel profilo iOS. L'XCTest legge lo stesso piano e allega il framebuffer finale.
+
+## Scala di compatibilità
 
 Registrare per ciascun binario il più alto livello osservato con le prove intermedie disponibili. I dieci livelli sono riconoscimento, caricamento, creazione del processo, esecuzione CPU, servizi HLE, primo frame, input, interazione, stabilità prolungata e misura sul dispositivo fisico. nx-hbmenu documenta il livello 8 con input e avvio di un'altra NRO dalla propria SD. L'esito di Rally non si estende ad altri eseguibili.
 

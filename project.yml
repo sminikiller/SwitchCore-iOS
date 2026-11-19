@@ -55,6 +55,8 @@ targets:
     platform: iOS
     sources:
       - tests/ios-engine
+      - path: tests/integration/nfm-race.txt
+        buildPhase: resources
       - apps/ios/Library/ExtractedGame.swift
       - path: third_party/nexo/tests/generated/triangle.nro
         buildPhase: resources
