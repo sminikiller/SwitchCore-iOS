@@ -84,7 +84,7 @@ constexpr int NX_O_NONBLOCK = 0x800;      // libnx pasa O_NONBLOCK con el valor 
 constexpr int BSD_F_GETFL = 3, BSD_F_SETFL = 4;
 constexpr int BSD_SOL_SOCKET = 0xFFFF, BSD_SO_SNDTIMEO = 0x1005, BSD_SO_RCVTIMEO = 0x1006;
 constexpr int BSD_SO_TYPE = 0x1008, BSD_SO_NOSIGPIPE = 0x0800;
-constexpr short POLL_IN = 1, POLL_OUT = 4;
+constexpr short NX_POLL_IN = 1, NX_POLL_OUT = 4;
 
 // Respuesta de bsd: s32 resultado, u32 errno (0 si fue bien)
 void Reply(IpcContext& ctx, s64 ret, int err) {
@@ -177,7 +177,7 @@ BsdService::BsdService(std::string name) : ServiceObject(std::move(name)) {
         for (s32 fd = 0; fd < nfds; ++fd) {
             short ev = 0;
             for (int k = 0; k < 2; ++k)
-                if (size_t(fd / 8) < sets[k].size() && (sets[k][fd / 8] >> (fd % 8) & 1)) ev |= k == 0 ? POLL_IN : POLL_OUT;
+                if (size_t(fd / 8) < sets[k].size() && (sets[k][fd / 8] >> (fd % 8) & 1)) ev |= k == 0 ? NX_POLL_IN : NX_POLL_OUT;
             if (!ev) continue;
             GuestSocket* s = net.Get(fd);
             entries.push_back({s ? s->handle : Net::INVALID_HANDLE, ev, 0});
@@ -200,8 +200,8 @@ BsdService::BsdService(std::string name) : ServiceObject(std::move(name)) {
         for (size_t i = 0; i < entries.size(); ++i) {
             const s32 fd = fds[i];
             const short r = entries[i].revents;
-            if ((r & (POLL_IN | 0x10)) && size_t(fd / 8) < sets[0].size()) { sets[0][fd / 8] |= u8(1 << (fd % 8)); ++n; }
-            if ((r & POLL_OUT) && size_t(fd / 8) < sets[1].size()) { sets[1][fd / 8] |= u8(1 << (fd % 8)); ++n; }
+            if ((r & (NX_POLL_IN | 0x10)) && size_t(fd / 8) < sets[0].size()) { sets[0][fd / 8] |= u8(1 << (fd % 8)); ++n; }
+            if ((r & NX_POLL_OUT) && size_t(fd / 8) < sets[1].size()) { sets[1][fd / 8] |= u8(1 << (fd % 8)); ++n; }
             if ((r & 8) && size_t(fd / 8) < sets[2].size()) { sets[2][fd / 8] |= u8(1 << (fd % 8)); ++n; }
         }
         for (int k = 0; k < 3; ++k) ctx.WriteBuffer(sets[k].data(), sets[k].size(), size_t(k));
@@ -255,7 +255,7 @@ BsdService::BsdService(std::string name) : ServiceObject(std::move(name)) {
             Net::Addr4 addr;
             int err = 0;
             const bool peek = flags & BSD_MSG_PEEK;
-            const long n = Blocking(ctx, *s, flags & BSD_MSG_DONTWAIT, POLL_IN, s->recv_timeout_ms, err, [&](int& e) {
+            const long n = Blocking(ctx, *s, flags & BSD_MSG_DONTWAIT, NX_POLL_IN, s->recv_timeout_ms, err, [&](int& e) {
                 return from ? Net::RecvFrom(s->handle, data.data(), data.size(), peek, addr, e)
                             : Net::Recv(s->handle, data.data(), data.size(), peek, e);
             });
@@ -283,7 +283,7 @@ BsdService::BsdService(std::string name) : ServiceObject(std::move(name)) {
             Net::Addr4 addr;
             if (to && !ParseAddr(ctx.ReadBuffer(1), addr)) { Reply(ctx, -1, E::INVAL); return; }
             int err = 0;
-            const long n = Blocking(ctx, *s, flags & BSD_MSG_DONTWAIT, POLL_OUT, s->send_timeout_ms, err, [&](int& e) {
+            const long n = Blocking(ctx, *s, flags & BSD_MSG_DONTWAIT, NX_POLL_OUT, s->send_timeout_ms, err, [&](int& e) {
                 return to ? Net::SendTo(s->handle, data.data(), data.size(), addr, e)
                           : Net::Send(s->handle, data.data(), data.size(), false, e);
             });
@@ -303,7 +303,7 @@ BsdService::BsdService(std::string name) : ServiceObject(std::move(name)) {
         Net::Handle h = Net::INVALID_HANDLE;
         int err = 0;
         const GuestSocket listener = *s;
-        const long r = Blocking(ctx, *s, false, POLL_IN, -1, err, [&](int& e) {
+        const long r = Blocking(ctx, *s, false, NX_POLL_IN, -1, err, [&](int& e) {
             h = Net::Accept(listener.handle, addr, e);
             return h == Net::INVALID_HANDLE ? -1L : 0L;
         });
@@ -342,7 +342,7 @@ BsdService::BsdService(std::string name) : ServiceObject(std::move(name)) {
         if (err != E::INPROGRESS || s->nonblocking) { Reply(ctx, -1, err); return; }
         // Socket bloqueante: esperar a que conecte (como mucho 30 s, o su SO_SNDTIMEO)
         const Net::Handle h = s->handle;
-        const int ev = WaitSocket(ctx.GetKernel(), h, POLL_OUT, s->send_timeout_ms > 0 ? s->send_timeout_ms : 30000);
+        const int ev = WaitSocket(ctx.GetKernel(), h, NX_POLL_OUT, s->send_timeout_ms > 0 ? s->send_timeout_ms : 30000);
         if (ev == 0) { Reply(ctx, -1, E::TIMEDOUT); return; }
         if (ev < 0)  { Reply(ctx, -1, E::INTR); return; }
         const int pending = Net::PendingError(h);
@@ -442,7 +442,7 @@ BsdService::BsdService(std::string name) : ServiceObject(std::move(name)) {
         if (!s) { Reply(ctx, -1, E::BADF); return; }
         const std::vector<u8> data = ctx.ReadBuffer(0);
         int err = 0;
-        const long n = Blocking(ctx, *s, false, POLL_OUT, s->send_timeout_ms, err, [&](int& e) {
+        const long n = Blocking(ctx, *s, false, NX_POLL_OUT, s->send_timeout_ms, err, [&](int& e) {
             return Net::Send(s->handle, data.data(), data.size(), false, e);
         });
         Reply(ctx, n, err);
@@ -453,7 +453,7 @@ BsdService::BsdService(std::string name) : ServiceObject(std::move(name)) {
         if (!s) { Reply(ctx, -1, E::BADF); return; }
         std::vector<u8> data(size_t(ctx.GetWriteBufferSize(0)));
         int err = 0;
-        const long n = Blocking(ctx, *s, false, POLL_IN, s->recv_timeout_ms, err, [&](int& e) {
+        const long n = Blocking(ctx, *s, false, NX_POLL_IN, s->recv_timeout_ms, err, [&](int& e) {
             return Net::Recv(s->handle, data.data(), data.size(), false, e);
         });
         if (n > 0) ctx.WriteBuffer(data.data(), size_t(n), 0);

@@ -1,0 +1,60 @@
+name: SwitchCore
+options:
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    CLANG_CXX_LANGUAGE_STANDARD: c++20
+    SWIFT_VERSION: 5.0
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    TARGETED_DEVICE_FAMILY: 1,2
+    HEADER_SEARCH_PATHS: ['$(SRCROOT)', '$(SRCROOT)/third_party/nexo/src', '$(SRCROOT)/third_party/nexo/src/core', '$(SRCROOT)/third_party/nexo/src/core/arm64', '$(SRCROOT)/third_party/nexo/src/core/memory']
+targets:
+  SwitchEngine:
+    type: library.static
+    platform: iOS
+    sources:
+      - path: third_party/nexo/src
+        excludes: ['video_core/vulkan/**', 'core/arm64/fp_ops.cpp']
+      - path: third_party/nexo/src/core/arm64/fp_ops.cpp
+        compilerFlags: '-frounding-math'
+      - core/runtime
+  SwitchCore:
+    type: application
+    platform: iOS
+    sources:
+      - path: apps/ios
+        excludes: ['Resources/**']
+      - path: apps/ios/Resources
+        buildPhase: resources
+    dependencies:
+      - target: SwitchEngine
+      - sdk: libc++.tbd
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.sminikiller.SwitchCore
+        SWIFT_OBJC_BRIDGING_HEADER: core/runtime/SwitchCore.h
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: SwitchCore
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: 'UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+  SwitchCoreUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [tests/ios]
+    dependencies:
+      - target: SwitchCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.sminikiller.SwitchCore.UITests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  SwitchCore:
+    build:
+      targets:
+        SwitchCore: all
+    test:
+      targets: [SwitchCoreUITests]
+

@@ -201,10 +201,10 @@ int main(void) {
     }
     check("svcWaitSynchronization(hilo) al terminar", joined);
 
-    // --- Dormir: el reloj avanza al menos 1 ms (31250 ticks a 31,25 MHz) ---
+    // --- Dormir: el reloj avanza al menos 1 ms (19200 ticks a 19,2 MHz) ---
     const u64 t0 = svcGetSystemTick();
     svcSleepThread(1000000);
-    check("svcSleepThread(1 ms)", svcGetSystemTick() - t0 >= 31250);
+    check("svcSleepThread(1 ms)", svcGetSystemTick() - t0 >= 19200);
 
     // --- Plazo vencido: esperar un hilo que nunca arranca ---
     u32 idle = 0;

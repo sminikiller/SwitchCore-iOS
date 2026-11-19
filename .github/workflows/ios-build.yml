@@ -1,0 +1,41 @@
+name: iOS
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches-ignore: [main]
+    paths: ['apps/**', 'core/**', 'backends/**', 'third_party/**', 'project.yml', 'tests/ios/**', '.github/workflows/ios-build.yml']
+permissions:
+  contents: read
+jobs:
+  device-and-simulator:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - run: xcodegen generate
+      - name: Build arm64 device app
+        run: |
+          set -o pipefail
+          xcodebuild -quiet -scheme SwitchCore -configuration Release -destination 'generic/platform=iOS' -derivedDataPath out/device CODE_SIGNING_ALLOWED=NO | tee device.log
+          mkdir Payload
+          cp -R out/device/Build/Products/Release-iphoneos/SwitchCore.app Payload/
+          file Payload/SwitchCore.app/SwitchCore | grep arm64
+          ditto -c -k --keepParent Payload SwitchCore-unsigned.ipa
+      - name: Run the game on an iPhone simulator
+        run: |
+          set -o pipefail
+          id=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; print(next(d["udid"] for r,ds in reversed(list(json.load(sys.stdin)["devices"].items())) if "iOS" in r for d in ds if "iPhone" in d["name"]))')
+          xcrun simctl boot "$id" || true
+          xcrun simctl bootstatus "$id" -b
+          xcodebuild -quiet test -scheme SwitchCore -configuration Release -destination "id=$id" -parallel-testing-enabled NO -derivedDataPath out/sim -resultBundlePath Gameplay.xcresult | tee simulator.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-evidence
+          path: |
+            *.log
+            Gameplay.xcresult
+            SwitchCore-unsigned.ipa
+
