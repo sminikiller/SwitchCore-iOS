@@ -8,7 +8,7 @@ final class MetalTests: XCTestCase {
         // render target with the CPU after the fence, so every GPU submission is written back to guest
         // memory. The engine reads this flag once, at the first submission of the process.
         setenv("NEXO2_VK_SYNC", "1", 1)
-        setenv("NEXO2_VK_DRAW_DEBUG", "1", 1) // temporary diagnostics
+        setenv("MVK_CONFIG_DEBUG", "1", 1) // temporary: log the MSL that MoltenVK generates
     }
     func testIndependentHomebrewMenu() throws {
         let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "hbmenu", withExtension: "nro"),
@@ -35,8 +35,21 @@ final class MetalTests: XCTestCase {
             XCTAssertGreaterThan(colors.count, 16)
         }, nil, &number))
     }
+    // Vertices shaded on the CPU, Maxwell fragment shader translated to Metal through MoltenVK.
     func testGuestMaxwellTriangle() throws {
+        try runTriangle(gpuVertexShader: false)
+    }
+    // Maxwell vertex shader translated as well; it reads its inputs from storage buffers.
+    func testGuestMaxwellVertexShader() throws {
+        #if targetEnvironment(simulator)
+        XCTExpectFailure("Nel simulatore il vertex shader tradotto non produce pixel.", strict: false)
+        #endif
+        try runTriangle(gpuVertexShader: true)
+    }
+    private func runTriangle(gpuVertexShader: Bool) throws {
         guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("Metal assente sul runner.") }
+        if !gpuVertexShader { setenv("NEXO2_VK_CPU_VS", "1", 1) }
+        defer { unsetenv("NEXO2_VK_CPU_VS") }
         let session = try XCTUnwrap(sc_create())
         defer { sc_destroy(session) }
         let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "triangle", withExtension: "nro"))
@@ -49,33 +62,8 @@ final class MetalTests: XCTestCase {
         while stats.state == SC_RUNNING && Date() < deadline { stats = sc_step(session, 100000) }
         XCTAssertEqual(stats.state, SC_EXITED)
         XCTAssertGreaterThan(stats.gpu_draws, 0)
-        XCTAssertTrue(String(cString: sc_log(session)).contains("triangulo completo, fallos: 0"))
-    }
-    // Temporary diagnostics: which renderer path loses the triangle in the Simulator.
-    func testTriangleDiagnostics() throws {
-        guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("Metal assente sul runner.") }
-        let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "triangle", withExtension: "nro"))
-        let variants: [(String, [String])] = [("default", []), ("nocull", ["NEXO2_NOCULL"]),
-                                              ("cpu-vs", ["NEXO2_VK_CPU_VS"]),
-                                              ("cpu-vs+nocull", ["NEXO2_VK_CPU_VS", "NEXO2_NOCULL"])]
-        for (name, flags) in variants {
-            flags.forEach { setenv($0, "1", 1) }
-            defer { flags.forEach { unsetenv($0) } }
-            let session = try XCTUnwrap(sc_create())
-            defer { sc_destroy(session) }
-            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            defer { try? FileManager.default.removeItem(at: root) }
-            guard sc_load(session, SC_SWITCH_1, file.path, root.path), sc_set_gpu(session, true) else {
-                print("diag \(name): setup failed \(String(cString: sc_message(session)))")
-                continue
-            }
-            var stats = sc_step(session, 100000)
-            let deadline = Date().addingTimeInterval(25)
-            while stats.state == SC_RUNNING && Date() < deadline { stats = sc_step(session, 100000) }
-            let lines = String(cString: sc_log(session)).split(separator: "\n")
-                .filter { $0.contains("FALLO") || $0.contains("pixeles") || $0.contains("fallos") }
-            print("diag \(name): draws=\(stats.gpu_draws) state=\(stats.state.rawValue) \(lines.joined(separator: " | "))")
-        }
+        let log = String(cString: sc_log(session))
+        XCTAssertTrue(log.contains("triangulo completo, fallos: 0"), log)
     }
 }
 
