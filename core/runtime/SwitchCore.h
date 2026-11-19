@@ -26,6 +26,8 @@ typedef void (*SCAudioSink)(void *, const int16_t *, size_t);
 SCSession *sc_create(void);
 void sc_destroy(SCSession *session);
 bool sc_load(SCSession *, SCBackend, const char *nro_path, const char *title_directory);
+// Accelerated draws stay in GPU images until presentation or a GPU-side access. Guest CPU reads of
+// a render target see them only with NEXO2_VK_SYNC=1 set before the first submission.
 bool sc_set_gpu(SCSession *, bool accelerated);
 void sc_cache(SCSession *, bool enabled);
 void sc_pad(SCSession *, uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int32_t ry);

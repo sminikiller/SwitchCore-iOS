@@ -2,6 +2,13 @@ import Metal
 import XCTest
 
 final class MetalTests: XCTestCase {
+    override class func setUp() {
+        super.setUp()
+        // Accelerated draws stay in Metal images until presentation. The triangle homebrew reads its
+        // render target with the CPU after the fence, so every GPU submission is written back to guest
+        // memory. The engine reads this flag once, at the first submission of the process.
+        setenv("NEXO2_VK_SYNC", "1", 1)
+    }
     func testIndependentHomebrewMenu() throws {
         let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "hbmenu", withExtension: "nro"),
                                  "Preparare la fixture con tools/verify-independent.py --fetch-only build-fixtures")
