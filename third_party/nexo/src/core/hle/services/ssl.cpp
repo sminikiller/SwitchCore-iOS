@@ -39,7 +39,7 @@ constexpr u32 OPTION_GET_SERVER_CERT_CHAIN = 1;
 constexpr u32 VERIFY_PEER_CA = 1, VERIFY_HOST_NAME = 2, VERIFY_DATE_CHECK = 4;
 constexpr u32 IO_NON_BLOCKING = 2;
 constexpr int BLOCKING_TIMEOUT_MS = 5 * 60 * 1000;   // modo bloqueante de la consola: 5 minutos
-constexpr short POLL_IN = 1, POLL_OUT = 4;
+constexpr short NX_POLL_IN = 1, NX_POLL_OUT = 4;
 }
 
 // ============================================================================
@@ -297,7 +297,7 @@ SslConnection::SslConnection(std::shared_ptr<SslContextData> context)
             if (WantsIo(ret)) {
                 if (written > 0) break;   // ya se envio algo: se devuelve eso
                 if (m_ioMode == IO_NON_BLOCKING) { ctx.Push<u32>(0); ctx.SetResult(RESULT_WOULD_BLOCK); return; }
-                const int ev = WaitSocket(ctx.GetKernel(), s->handle, ret == MBEDTLS_ERR_SSL_WANT_READ ? POLL_IN : POLL_OUT,
+                const int ev = WaitSocket(ctx.GetKernel(), s->handle, ret == MBEDTLS_ERR_SSL_WANT_READ ? NX_POLL_IN : NX_POLL_OUT,
                                           BLOCKING_TIMEOUT_MS);
                 s = ctx.GetKernel().Network().Get(m_socket);
                 if (ev <= 0 || !s) { ctx.Push<u32>(0); ctx.SetResult(RESULT_CONNECTION_ERROR); return; }
@@ -344,12 +344,12 @@ SslConnection::SslConnection(std::shared_ptr<SslContextData> context)
         if ((events & 1) && buffered) ready |= 1;
         if (!ready && s) {
             short want = 0;
-            if (events & 1) want |= POLL_IN;
-            if (events & 2) want |= POLL_OUT;
+            if (events & 1) want |= NX_POLL_IN;
+            if (events & 2) want |= NX_POLL_OUT;
             const int ev = want ? WaitSocket(ctx.GetKernel(), s->handle, want, int(timeout)) : 0;
             if (ev > 0) {
-                if ((ev & POLL_IN) && (events & 1)) ready |= 1;
-                if ((ev & POLL_OUT) && (events & 2)) ready |= 2;
+                if ((ev & NX_POLL_IN) && (events & 1)) ready |= 1;
+                if ((ev & NX_POLL_OUT) && (events & 2)) ready |= 2;
                 if ((ev & 8) && (events & 4)) ready |= 4;
             }
         }
@@ -438,7 +438,7 @@ u32 SslConnection::Handshake(IpcContext& ctx) {
         if (ret == 0) break;
         if (WantsIo(ret)) {
             if (m_ioMode == IO_NON_BLOCKING) return RESULT_WOULD_BLOCK;
-            const int ev = WaitSocket(ctx.GetKernel(), s->handle, ret == MBEDTLS_ERR_SSL_WANT_WRITE ? POLL_OUT : POLL_IN,
+            const int ev = WaitSocket(ctx.GetKernel(), s->handle, ret == MBEDTLS_ERR_SSL_WANT_WRITE ? NX_POLL_OUT : NX_POLL_IN,
                                       BLOCKING_TIMEOUT_MS);
             s = ctx.GetKernel().Network().Get(m_socket);
             if (ev <= 0 || !s) return RESULT_CONNECTION_ERROR;
@@ -488,7 +488,7 @@ u32 SslConnection::ReadSome(IpcContext& ctx, std::vector<u8>& out, size_t max, b
 #endif
         if (WantsIo(ret)) {
             if (m_ioMode == IO_NON_BLOCKING) { out.clear(); return RESULT_WOULD_BLOCK; }
-            const int ev = WaitSocket(ctx.GetKernel(), s->handle, ret == MBEDTLS_ERR_SSL_WANT_WRITE ? POLL_OUT : POLL_IN,
+            const int ev = WaitSocket(ctx.GetKernel(), s->handle, ret == MBEDTLS_ERR_SSL_WANT_WRITE ? NX_POLL_OUT : NX_POLL_IN,
                                       BLOCKING_TIMEOUT_MS);
             s = ctx.GetKernel().Network().Get(m_socket);
             if (ev <= 0 || !s) { out.clear(); return RESULT_CONNECTION_ERROR; }
