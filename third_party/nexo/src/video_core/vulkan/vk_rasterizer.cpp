@@ -1576,7 +1576,14 @@ bool VulkanRasterizer::Draw(const u32* regs, const ConstbufTable& cbs, const Dra
     }
 
     // --- Espacio en el buffer de subida y descriptores (todo o nada: puede ejecutar lo pendiente) ---
+#ifdef SWITCHCORE_MOLTENVK
+    // MoltenVK reports 16 for storage buffers, but binds them as MTLBuffer offsets, whose alignment it
+    // reports as the uniform one (256 in the iOS Simulator, where 16-byte offsets read wrong data).
+    const VkDeviceSize salign =
+        std::max<VkDeviceSize>({lim.minStorageBufferOffsetAlignment, lim.minUniformBufferOffsetAlignment, 16});
+#else
     const VkDeviceSize salign = std::max<VkDeviceSize>(lim.minStorageBufferOffsetAlignment, 16);
+#endif
     VkDeviceSize need = vdata.size() * 4 + 256 + salign * 40;
     for (const auto& c : cbdata) need += c.size();
     if (vsh) {
