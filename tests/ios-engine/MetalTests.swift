@@ -8,7 +8,6 @@ final class MetalTests: XCTestCase {
         // render target with the CPU after the fence, so every GPU submission is written back to guest
         // memory. The engine reads this flag once, at the first submission of the process.
         setenv("NEXO2_VK_SYNC", "1", 1)
-        setenv("MVK_CONFIG_DEBUG", "1", 1) // temporary: log the MSL that MoltenVK generates
     }
     func testIndependentHomebrewMenu() throws {
         let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "hbmenu", withExtension: "nro"),
