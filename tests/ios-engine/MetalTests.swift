@@ -40,9 +40,6 @@ final class MetalTests: XCTestCase {
     }
     // Maxwell vertex shader translated as well; it reads its inputs from storage buffers.
     func testGuestMaxwellVertexShader() throws {
-        #if targetEnvironment(simulator)
-        XCTExpectFailure("Nel simulatore il vertex shader tradotto non produce pixel.", strict: false)
-        #endif
         try runTriangle(gpuVertexShader: true)
     }
     private func runTriangle(gpuVertexShader: Bool) throws {

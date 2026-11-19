@@ -56,6 +56,9 @@ constexpr u32 BINDLESS_TEXTURE = 0x982;
 constexpr u32 CLEAR_COLOR = 0x360, CLEAR_DEPTH = 0x364;
 
 constexpr u32 MAX_TEXTURES = 16;
+// SwitchCore: every binding number in the descriptor set layout must be unique.
+static_assert(SpirvBinding::TEXTURE0 + MAX_TEXTURES <= SpirvBinding::VS_INFO,
+              "the vertex shader bindings must follow the texture bindings");
 constexpr u32 SETS_PER_POOL = 1024;
 constexpr VkDeviceSize UPLOAD_SIZE = 64ull << 20;
 
@@ -317,8 +320,8 @@ bool VulkanRasterizer::Init(std::string& error) {
     VkFenceCreateInfo fci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     vkCreateFence(m_vk, &fci, nullptr, &m_fence);
 
-    // Enlaces: 0..17 constbufs, 18 informacion del draw, 32.. texturas (shader de pixeles);
-    // 38 informacion, 39 entradas y 40..57 constbufs del shader de vertices (si va en la GPU)
+    // Enlaces: 0..17 constbufs, 18 informacion del draw, 32..47 texturas (shader de pixeles);
+    // 48 informacion, 49 entradas y 50..67 constbufs del shader de vertices (si va en la GPU)
     const auto& lim = m_dev.Limits();
     m_gpuVs = !std::getenv("NEXO2_VK_CPU_VS") && lim.maxPerStageDescriptorStorageBuffers >= 20 &&
               lim.maxDescriptorSetStorageBuffers >= 19 + 20;

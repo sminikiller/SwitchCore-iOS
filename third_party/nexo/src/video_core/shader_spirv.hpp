@@ -61,11 +61,14 @@ namespace SpirvBinding {
     constexpr u32 ATTR_OUT = 21;   // ComputeTest: uint[256]: lo que escribe AST
     constexpr u32 TEXTURE0 = 32;   // Fragment: textura k (sampler combinado) en el binding 32 + k
     // Shader de vertices en la GPU (ver SpirvResult::vs_attr_mask)
-    constexpr u32 VS_INFO = 38;    // Vertex: uint[]: [0..5] escala x,y,z y desplazamiento x,y,z del
+    // SwitchCore: these bindings follow the 16 texture bindings (32..47). They used to start at 38,
+    // and a set layout with repeated binding numbers is invalid: MoltenVK sent the writes for 38
+    // and 39 to the texture bindings, so the vertex stage read unbound buffers and drew nothing.
+    constexpr u32 VS_INFO = 48;    // Vertex: uint[]: [0..5] escala x,y,z y desplazamiento x,y,z del
                                    // viewport (floats, 1 y 0 sin transformacion), [6] ancho y [7] alto
                                    // de la zona (floats), [8] profundidad 0..1, [9] id de instancia
-    constexpr u32 VS_ATTR = 39;    // Vertex: uint[]: las entradas de cada vertice (VsRecordWords palabras)
-    constexpr u32 VS_CBUF0 = 40;   // Vertex: c[i] -> binding 40 + i
+    constexpr u32 VS_ATTR = 49;    // Vertex: uint[]: las entradas de cada vertice (VsRecordWords palabras)
+    constexpr u32 VS_CBUF0 = 50;   // Vertex: c[i] -> binding 50 + i
 }
 
 // Textura que usa el shader de pixeles: handle en c[TextureConstbuf][slot * 4]
