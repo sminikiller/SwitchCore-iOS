@@ -1,0 +1,24 @@
+name: Nightly
+on:
+  schedule: [{cron: '24 3 * * *'}]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core:
+    uses: ./.github/workflows/core-tests.yml
+  ios:
+    uses: ./.github/workflows/ios-build.yml
+  soak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build --target switchcore-probe --parallel 4
+      - run: build/switchcore-probe apps/ios/Resources/rally.nro build/title soak | tee soak.log
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soak
+          path: soak.log
+
